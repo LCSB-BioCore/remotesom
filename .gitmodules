@@ -1,0 +1,6 @@
+[submodule "accelerate"]
+	path = accelerate
+	url = git@github.com:AccelerateHS/accelerate.git
+[submodule "accelerate-llvm"]
+	path = accelerate-llvm
+	url = git@github.com:AccelerateHS/accelerate-llvm.git
