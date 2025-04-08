@@ -1,5 +1,6 @@
 {-# LANGUAGE TypeOperators #-}
-
+--
+-- TODO: https://github.com/AccelerateHS/accelerate-examples/tree/master/examples/kmeans
 module Main where
 
 import StorableArray
@@ -7,8 +8,6 @@ import StorableArray
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import qualified Data.Array.Accelerate.Interpreter as A
-import Data.Array.Accelerate.LLVM.Native as L
-import Data.Foldable (foldlM)
 import Data.Function ((&))
 import System.Environment
 
@@ -22,13 +21,11 @@ somIter points gsqdists som eps =
       expts =
         A.replicate (A.constant $ Z :. A.All :. somn :. A.All) $ A.use points
       exsom = A.replicate (A.constant $ Z :. pts :. A.All :. A.All) $ A.use som
-      toArg :: A.Exp (Z :. Int :. Int) -> A.Exp Float -> A.Exp (Float, Int)
-      toArg eix ev = A.lift (ev, A.indexHead eix)
       closest =
         A.zipWith (-) expts exsom
           & A.map (\x -> x * x)
           & A.sum
-          & A.imap toArg
+          & A.imap (\ix v -> A.lift (v, A.indexHead ix))
           & A.minimum
           & A.map A.snd
       counts =
@@ -41,13 +38,13 @@ somIter points gsqdists som eps =
         A.permute
           (+)
           (A.constant (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
-          (\(A.I2 pi dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pi) dimi)
+          (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
           (A.use points)
    in A.zipWith A.max (A.shape counts `A.fill` A.constant 1) counts
         & A.replicate (A.constant $ Z :. A.All :. dim)
         & A.map A.fromIntegral
         & A.zipWith (/) sums
-        & L.run
+        & A.run & floatArray
 
 main :: IO ()
 main = do
