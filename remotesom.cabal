@@ -71,10 +71,10 @@ executable remotesom
   -- Other library packages from which modules are imported.
   build-depends:
     , accelerate
+    , accelerate-llvm-native
     , base
-    , storablevector
     , optparse-applicative
-    --, accelerate-llvm-native
+    , storablevector
 
   -- Directories containing source files.
   hs-source-dirs:   app

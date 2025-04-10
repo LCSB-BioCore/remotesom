@@ -4,3 +4,7 @@
 [submodule "accelerate-llvm"]
 	path = accelerate-llvm
 	url = git@github.com:AccelerateHS/accelerate-llvm.git
+[submodule "llvm-hs"]
+	path = llvm-hs
+	url = git@github.com:llvm-hs/llvm-hs.git
+	branch = llvm-15
