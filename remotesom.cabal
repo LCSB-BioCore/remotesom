@@ -53,7 +53,7 @@ extra-doc-files: CHANGELOG.md
 -- extra-source-files:
 
 common opts
-  ghc-options: -Wall -O2 -fexpose-all-unfoldings -fspecialize-aggressively
+  ghc-options: -Wall -O2 -fexpose-all-unfoldings -fspecialize-aggressively -rtsopts -threaded
 
 executable remotesom
   -- Import common warning flags.

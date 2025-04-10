@@ -62,7 +62,7 @@ epsilon = 1e-7
 dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
 
 somIter points gsqdists som sigma =
-  A.zipWith (/) sums (dodgeZero countsS)
+  A.zipWith (/) sumsS (dodgeZero countsS)
   where
     somn, dim :: Int
     (sums, counts) = somSumCounts points som
@@ -100,5 +100,5 @@ main = do
   --print gridsqdist
   --print $ runExp $ A.use points A.! A.constant (Z :. 0 :. 0)
   --print $ A.run $ A.slice (A.use points) $ A.constant (Z :. (0::Int) :. A.All)
-  --print finalSom
-  print $ A.run $ A.sum $ somSmoothWeights somn (A.use gridsqdist) 2.0
+  print $ A.run $ A.transpose $ A.use finalSom
+  --print $ A.run $ A.sum $ somSmoothWeights somn (A.use gridsqdist) 2.0
