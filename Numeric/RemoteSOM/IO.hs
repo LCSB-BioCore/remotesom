@@ -59,28 +59,13 @@ writeArrayTSV a fp =
         . map show
         $ A.toList a
 
-data SOM f = SOM
-  { centroids :: [[f]]
-  , topology :: [[f]]
-  } deriving (Show, Generic, J.FromJSON, J.ToJSON)
-
-arraySOM ::
-     A.Elt f
-  => A.Array (Z :. Int :. Int) f
-  -> A.Array (Z :. Int :. Int) f
-  -> SOM f
-arraySOM c t =
-  SOM {centroids = chunks dim $ A.toList c, topology = chunks nsom $ A.toList t}
+somArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
+somArray c = chunks dim $ A.toList c
   where
-    (Z :. nsom :. dim) = A.arrayShape c
+    (Z :. _ :. dim) = A.arrayShape c
 
-somArray ::
-     A.Elt f
-  => SOM f
-  -> (A.Array ((Z :. Int) :. Int) f, A.Array ((Z :. Int) :. Int) f)
-somArray SOM {centroids = c, topology = t} =
-  ( A.fromList (Z :. nsom :. dim) $ concat c
-  , A.fromList (Z :. nsom :. nsom) $ concat t)
+arraySOM :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
+arraySOM c = A.fromList (Z :. nsom :. dim) $ concat c
   where
     nsom = length c
     dim =
@@ -88,26 +73,36 @@ somArray SOM {centroids = c, topology = t} =
         (c0:_) -> length c0
         _ -> error "empty SOM"
 
+topoArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
+topoArray t = chunks nsom $ A.toList t
+  where
+    (Z :. _ :. nsom) = A.arrayShape t
+
+arrayTopo :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
+arrayTopo t = A.fromList (Z :. nsom :. nsom) $ concat t
+  where
+    nsom = length t
+
 data DataSummary f = DataSummary
   { sums :: [[f]]
   , counts :: [Int]
   } deriving (Show, Generic, J.FromJSON, J.ToJSON)
 
-arraySummary ::
+summaryArray ::
      A.Elt f
   => A.Array (Z :. Int :. Int) f
   -> A.Array (Z :. Int) Int
   -> DataSummary f
-arraySummary s c =
+summaryArray s c =
   DataSummary {sums = chunks dim $ A.toList s, counts = A.toList c}
   where
     (Z :. _ :. dim) = A.arrayShape s
 
-summaryArray ::
+arraySummary ::
      A.Elt f
   => DataSummary f
   -> (A.Array (Z :. Int :. Int) f, A.Array (Z :. Int) Int)
-summaryArray DataSummary {sums = s, counts = c} =
+arraySummary DataSummary {sums = s, counts = c} =
   (A.fromList (Z :. nsom :. dim) $ concat s, A.fromList (Z :. nsom) c)
   where
     nsom = length s

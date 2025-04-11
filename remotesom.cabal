@@ -15,8 +15,7 @@ extra-doc-files: CHANGELOG.md
 -- extra-source-files:
 
 common opts
-  ghc-options:
-    -Wall -O2 -fexpose-all-unfoldings -fspecialize-aggressively
+  ghc-options: -Wall -O2 -fexpose-all-unfoldings -fspecialize-aggressively
 
 library
   import:           opts
@@ -38,14 +37,15 @@ library
 
 executable remotesom
   import:           opts
-  ghc-options: -rtsopts -threaded
+  ghc-options:      -rtsopts -threaded
   main-is:          Main.hs
-
-  -- other-modules:
-
+  other-modules:    Opts
+  autogen-modules:  Paths_remotesom
+  other-modules:    Paths_remotesom
   build-depends:
     , accelerate
     , accelerate-llvm-native
+    , aeson
     , base
     , optparse-applicative
     , remotesom

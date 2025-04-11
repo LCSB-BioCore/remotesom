@@ -63,11 +63,17 @@ epsilon = 1e-7
 
 dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
 
-somIter points gsqdists som sigma = A.zipWith (/) sumsS (dodgeZero countsS)
+somAggregate ::
+     Int
+  -> Int
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float)
+  -> Float
+  -> A.Acc (A.Matrix Float)
+somAggregate somn dim sums counts gsqdists sigma =
+  A.zipWith (/) sumsS (dodgeZero countsS)
   where
-    somn, dim :: Int
-    (sums, counts) = somSumCounts points som
-    (Z :. somn :. dim) = A.arrayShape som
     smoothWeights = somSmoothWeights somn gsqdists sigma
     sumsS = gemm sums smoothWeights
     countsS :: A.Acc (A.Array (Z :. Int :. Int) Float)
@@ -76,3 +82,9 @@ somIter points gsqdists som sigma = A.zipWith (/) sumsS (dodgeZero countsS)
         (A.replicate (A.constant $ Z :. A.All :. dim)
            $ A.map A.fromIntegral counts)
         smoothWeights
+
+somIter points gsqdists som sigma =
+  somAggregate somn dim sums counts gsqdists sigma
+  where
+    (Z :. somn :. dim) = A.arrayShape som
+    (sums, counts) = somSumCounts points som
