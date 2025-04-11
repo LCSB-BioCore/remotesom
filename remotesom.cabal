@@ -47,6 +47,8 @@ executable remotesom
     , accelerate-llvm-native
     , aeson
     , base
+    , network
+    , network-run
     , optparse-applicative
     , remotesom
     , tls
