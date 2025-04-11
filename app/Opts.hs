@@ -66,7 +66,7 @@ genopts = do
   genSeed <-
     optional . option auto
       $ long "seed"
-          <> short 'S'
+          <> short 'R'
           <> metavar "SEED"
           <> help "fixed random generator seed"
   pure GenOpts {..}
@@ -118,7 +118,12 @@ data StatsOpts = StatsOpts
 
 statsopts = do
   statsSomIn <- somin
-  statsSomOut <- somout
+  statsOut <-
+    strOption
+      $ long "out-stats"
+          <> short 'S'
+          <> metavar "OUTFILE"
+          <> help "write the statistics to this file"
   pure StatsOpts {..}
 
 data SummaryOpts = SummaryOpts
@@ -156,25 +161,138 @@ aggregateopts = do
   aggregateSigma <- option auto $ sigma ""
   pure AggregateOpts {..}
 
-data ServerOpts = ServerOpts
-  { serverData :: InputOpts
-  , bindAddress :: String
-  , bindPort :: Int
+data TrustOpts = TrustOpts
+  { trustSystemCerts :: Bool
+  , trustCerts :: [FilePath]
   } deriving (Show)
+
+trustopts = do
+  trustSystemCerts <-
+    flag'
+      False
+      (long "no-trust-system-ca"
+         <> help "avoid validation against system certificates (default)")
+      <|> flag
+            False
+            True
+            (long "trust-system-ca"
+               <> help "enable using system CA certificates for validation")
+  trustCerts <-
+    many . strOption
+      $ long "accept-certificate"
+          <> short 'a'
+          <> metavar "PEM"
+          <> help "trust peers who validate with a given certificate"
+  pure TrustOpts {..}
+
+data ClientTrustOpts = ClientTrustOpts
+  { ctrustOpts :: TrustOpts
+  , ctrustValidateServerHostname :: Bool
+  } deriving (Show)
+
+ctrustopts = do
+  ctrustOpts <- trustopts
+  ctrustValidateServerHostname <-
+    flag'
+      True
+      (long "validate-hostname"
+         <> short 'v'
+         <> help
+              "force validation of server hostname against certificate CommonName (default)")
+      <|> flag
+            True
+            False
+            (long "no-validate-hostname"
+               <> help "do not validate server hostname")
+  return ClientTrustOpts {..}
+
+data ServerOpts = ServerOpts
+  { serverBindHost :: Maybe String
+  , serverBindService :: String
+  , serverCert :: FilePath
+  , serverCertChain :: [FilePath]
+  , serverKey :: FilePath
+  , serverTrust :: TrustOpts
+  } deriving (Show)
+
+serveropts = do
+  serverBindHost <-
+    optional . strOption
+      $ long "bind"
+          <> short 'B'
+          <> metavar "HOST"
+          <> help "optional host name to bind to"
+  serverBindService <-
+    strOption
+      $ long "service"
+          <> short 'p'
+          <> metavar "PORT"
+          <> value "21012"
+          <> showDefault
+          <> help "service identifier to serve (typically a port number)"
+  serverCert <-
+    strOption
+      $ long "cert"
+          <> short 'c'
+          <> metavar "PEM"
+          <> help "TLS server certificate"
+  serverCertChain <-
+    many . strOption
+      $ long "cert-chain"
+          <> short 'C'
+          <> metavar "PEM"
+          <> help
+               "TLS server certificate chain (may be specified multiple times)"
+  serverKey <-
+    strOption
+      $ long "key"
+          <> short 'k'
+          <> metavar "PEM"
+          <> help "TLS server private key"
+  serverTrust <- trustopts
+  pure ServerOpts {..}
 
 data ClientOpts = ClientOpts
-  { clientServerUrl :: String
-  , clientSomIn :: Either GenOpts FilePath
+  { clientServerHost :: String
+  , clientServerService :: String
+  , clientCert :: FilePath
+  , clientCertChain :: [FilePath]
+  , clientKey :: FilePath
+  , clientTrust :: ClientTrustOpts
   } deriving (Show)
 
-data TrainClientOpts = TrainClientOpts
-  { trainClientSomOut :: FilePath
-  , trainClientSigmas :: [Float]
-  } deriving (Show)
-
-data StatsClientOpts = StatsClientOpts
-  { statsClientOut :: FilePath
-  } deriving (Show)
+clientopts = do
+  clientServerHost <-
+    strArgument $ metavar "HOST" <> help "host name to connect to"
+  clientServerService <-
+    strOption
+      $ long "service"
+          <> short 'p'
+          <> metavar "PORT"
+          <> value "21012"
+          <> showDefault
+          <> help "service identifier to connect to (typically a port number)"
+  clientCert <-
+    strOption
+      $ long "cert"
+          <> short 'c'
+          <> metavar "PEM"
+          <> help "TLS client certificate"
+  clientCertChain <-
+    many . strOption
+      $ long "cert-chain"
+          <> short 'C'
+          <> metavar "PEM"
+          <> help
+               "TLS client certificate chain (may be specified multiple times)"
+  clientKey <-
+    strOption
+      $ long "key"
+          <> short 'k'
+          <> metavar "PEM"
+          <> help "TLS client private key"
+  clientTrust <- ctrustopts
+  pure ClientOpts {..}
 
 data Cmd
   = GenCmd GenOpts FilePath FilePath
@@ -183,8 +301,8 @@ data Cmd
   | SummaryCmd SummaryOpts InputOpts
   | AggregateCmd AggregateOpts
   | ServerCmd ServerOpts InputOpts
-  | RemoteTrainCmd ClientOpts TrainClientOpts
-  | RemoteStatsCmd ClientOpts StatsClientOpts
+  | ClientTrainCmd ClientOpts TrainOpts
+  | ClientStatsCmd ClientOpts StatsOpts
   deriving (Show)
 
 cmds =
@@ -201,6 +319,15 @@ cmds =
   , ( "aggregate"
     , "Aggregate multiple summarized commitments into a new SOM"
     , AggregateCmd <$> aggregateopts)
+  , ( "server"
+    , "Run a server that computes SOM updates from local data for clients who train their own SOMs"
+    , ServerCmd <$> serveropts <*> inopts)
+  , ( "train-client"
+    , "Train a SOM using data on remote servers"
+    , ClientTrainCmd <$> clientopts <*> trainopts)
+  , ( "stats-client"
+    , "Generate stats from data on remote servers"
+    , ClientStatsCmd <$> clientopts <*> statsopts)
   ]
 
 cmd :: Parser Cmd

@@ -49,6 +49,7 @@ executable remotesom
     , base
     , optparse-applicative
     , remotesom
+    , tls
 
   hs-source-dirs:   app
   default-language: Haskell2010
