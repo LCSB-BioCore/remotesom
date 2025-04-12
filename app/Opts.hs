@@ -290,31 +290,40 @@ serveropts = do
   serverTrust <- trustopts
   pure ServerOpts {..}
 
-type ClientServers = [(String, String)]
+type ClientServers = [ClientConnect]
+
+clientservers :: Parser ClientServers
+clientservers =
+  many . hsubparser . command "connect" . info clientconnect
+    $ progDesc "specify a connection to server"
+
+data ClientConnect = ClientConnect
+  { connHost :: String
+  , connService :: String
+  , connTrust :: ClientTrustOpts
+  } deriving (Show)
+
+clientconnect :: Parser ClientConnect
+clientconnect = do
+  connHost <-
+    strArgument $ metavar "HOST" <> help "server hostname to connect to"
+  connService <-
+    strOption
+      $ long "service"
+          <> short 'p'
+          <> metavar "PORT"
+          <> help
+               "numeric port or string service identifier to connect to on HOST"
+          <> value "21012"
+          <> showDefault
+  connTrust <- ctrustopts
+  pure ClientConnect {..}
 
 data ClientOpts = ClientOpts
   { clientCert :: FilePath
   , clientCertChain :: [FilePath]
   , clientKey :: FilePath
-  , clientTrust :: ClientTrustOpts
   } deriving (Show)
-
-parseHostService :: String -> (String, String)
-parseHostService hs =
-  case words hs of
-    [host] -> (host, "21012")
-    [host, service] -> (host, service)
-    _ -> error $ "could not parse server address: " ++ hs
-
-clientservers :: Parser ClientServers
-clientservers =
-  many . fmap parseHostService . strArgument
-    $ metavar "SERVER"
-        <> help
-             ("server(s) to connect to, in format HOSTNAME"
-                ++ " (defaulting to service port 21012),"
-                ++ " or space-separated \"HOSTNAME SERVICE\""
-                ++ " (e.g. \"www.example.com 21012\")")
 
 clientopts :: Parser ClientOpts
 clientopts = do
@@ -337,7 +346,6 @@ clientopts = do
           <> short 'k'
           <> metavar "PEM"
           <> help "TLS client private key"
-  clientTrust <- ctrustopts
   pure ClientOpts {..}
 
 data Cmd

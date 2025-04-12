@@ -81,21 +81,21 @@ interactServer opts oracle = do
     S.close sock
 
 runClientQuery ::
-     (String, String) -> ClientOpts -> LB.ByteString -> IO LB.ByteString
-runClientQuery (host, service) opts query = do
+     ClientConnect -> ClientOpts -> LB.ByteString -> IO LB.ByteString
+runClientQuery conn opts query = do
   cred <-
     either (error "failed to load client TLS credentials") id
       <$> TLS.credentialLoadX509Chain
             (clientCert opts)
             (clientCertChain opts)
             (clientKey opts)
-  let ctopts = clientTrust opts
+  let ctopts = connTrust conn
       topts = ctrustOpts ctopts
   cacerts <- readCACerts topts
-  TCP.runTCPClient host service $ \sock -> do
+  TCP.runTCPClient (connHost conn) (connService conn) $ \sock -> do
     let p =
           TLS.defaultParamsClient
-            (maybe host id $ ctrustCommonName ctopts)
+            (maybe (connHost conn) id $ ctrustCommonName ctopts)
             mempty
         h = TLS.clientHooks p
         sh = TLS.clientShared p
