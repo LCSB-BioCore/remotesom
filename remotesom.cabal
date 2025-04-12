@@ -39,7 +39,10 @@ executable remotesom
   import:           opts
   ghc-options:      -rtsopts -threaded
   main-is:          Main.hs
-  other-modules:    Opts
+  other-modules:
+    Network
+    Opts
+
   autogen-modules:  Paths_remotesom
   other-modules:    Paths_remotesom
   build-depends:
@@ -47,6 +50,9 @@ executable remotesom
     , accelerate-llvm-native
     , aeson
     , base
+    , bytestring
+    , crypton-x509-validation
+    , crypton-x509-system
     , network
     , network-run
     , optparse-applicative

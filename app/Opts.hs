@@ -3,11 +3,11 @@
 
 module Opts where
 
-import Control.Applicative (optional)
 import Data.Version (showVersion)
 import Options.Applicative
 import Paths_remotesom (version)
 
+somin :: Parser FilePath
 somin =
   strOption
     $ long "som-in"
@@ -15,6 +15,7 @@ somin =
         <> metavar "INFILE"
         <> help "read the SOM from this file"
 
+somout :: Parser FilePath
 somout =
   strOption
     $ long "som-out"
@@ -22,6 +23,7 @@ somout =
         <> metavar "OUTFILE"
         <> help "write the output SOM into this file"
 
+topoin :: Parser FilePath
 topoin =
   strOption
     $ long "topology-in"
@@ -29,6 +31,7 @@ topoin =
         <> metavar "TOPOLOGY"
         <> help "read the SOM topology from this file"
 
+topoout :: Parser FilePath
 topoout =
   strOption
     $ long "topology-out"
@@ -43,6 +46,12 @@ data GenOpts = GenOpts
   , genSeed :: (Maybe Int)
   } deriving (Show)
 
+dimopt :: Parser Int
+dimopt =
+  option auto
+    $ long "dimension" <> short 'd' <> metavar "DIM" <> help "data dimension"
+
+genopts :: Parser GenOpts
 genopts = do
   genX <-
     option auto
@@ -60,9 +69,7 @@ genopts = do
           <> help "grid dimension 2"
           <> value 10
           <> showDefault
-  genDim <-
-    option auto
-      $ long "dimension" <> short 'd' <> metavar "DIM" <> help "data dimension"
+  genDim <- dimopt
   genSeed <-
     optional . option auto
       $ long "seed"
@@ -76,6 +83,7 @@ data InputOpts = InputOpts
   , inputPoints :: Int
   } deriving (Show)
 
+inopts :: Parser InputOpts
 inopts = do
   inputData <-
     strOption
@@ -97,18 +105,23 @@ data TrainOpts = TrainOpts
   , trainSigmas :: [Float]
   } deriving (Show)
 
-sigma x =
+sigmaSpec :: String -> Mod OptionFields Float
+sigmaSpec x =
   long "sigma"
     <> short 's'
     <> metavar "SIGMA"
     <> help ("neighborhood smoothing radius for training" ++ x)
 
+trainopts :: Parser TrainOpts
 trainopts = do
   trainSomIn <-
     Left <$> ((,) <$> genopts <*> topoout)
       <|> Right <$> ((,) <$> somin <*> topoin)
   trainSomOut <- somout
-  trainSigmas <- many . option auto $ sigma " (may be specified multiple times)"
+  trainSigmas <-
+    many . option auto . sigmaSpec
+      $ " (should be specified multiple times --"
+          ++ " each occurence implies a training epoch)"
   pure TrainOpts {..}
 
 data StatsOpts = StatsOpts
@@ -116,6 +129,7 @@ data StatsOpts = StatsOpts
   , statsOut :: FilePath
   } deriving (Show)
 
+statsopts :: Parser StatsOpts
 statsopts = do
   statsSomIn <- somin
   statsOut <-
@@ -131,6 +145,7 @@ data SummaryOpts = SummaryOpts
   , summaryOut :: FilePath
   } deriving (Show)
 
+summaryopts :: Parser SummaryOpts
 summaryopts = do
   summarySomIn <- somin
   summaryOut <-
@@ -148,6 +163,7 @@ data AggregateOpts = AggregateOpts
   , aggregateSigma :: Float
   } deriving (Show)
 
+aggregateopts :: Parser AggregateOpts
 aggregateopts = do
   aggregateSummaryIn <-
     many . strOption
@@ -158,14 +174,16 @@ aggregateopts = do
                "read the summary from this file (may be specified multiple times)"
   aggregateTopoIn <- topoin
   aggregateSomOut <- somout
-  aggregateSigma <- option auto $ sigma ""
+  aggregateSigma <- option auto $ sigmaSpec ""
   pure AggregateOpts {..}
 
 data TrustOpts = TrustOpts
   { trustSystemCerts :: Bool
   , trustCerts :: [FilePath]
+  , trustSkipAllValidation :: Bool
   } deriving (Show)
 
+trustopts :: Parser TrustOpts
 trustopts = do
   trustSystemCerts <-
     flag'
@@ -183,6 +201,13 @@ trustopts = do
           <> short 'a'
           <> metavar "PEM"
           <> help "trust peers who validate with a given certificate"
+  trustSkipAllValidation <-
+    flag False True
+      $ long "DEBUG-INSECURE-ALLOW-EVERYONE-IN"
+          <> help
+               ("skip all TLS validation of the remote,"
+                  ++ " making debugging easier but potentially exposing data"
+                  ++ " to random passer-by (and attackers)")
   pure TrustOpts {..}
 
 data ClientTrustOpts = ClientTrustOpts
@@ -190,6 +215,7 @@ data ClientTrustOpts = ClientTrustOpts
   , ctrustValidateServerHostname :: Bool
   } deriving (Show)
 
+ctrustopts :: Parser ClientTrustOpts
 ctrustopts = do
   ctrustOpts <- trustopts
   ctrustValidateServerHostname <-
@@ -198,7 +224,8 @@ ctrustopts = do
       (long "validate-hostname"
          <> short 'v'
          <> help
-              "force validation of server hostname against certificate CommonName (default)")
+              ("force validation of server hostname"
+                 ++ " against certificate CommonName (default)"))
       <|> flag
             True
             False
@@ -215,6 +242,7 @@ data ServerOpts = ServerOpts
   , serverTrust :: TrustOpts
   } deriving (Show)
 
+serveropts :: Parser ServerOpts
 serveropts = do
   serverBindHost <-
     optional . strOption
@@ -252,26 +280,34 @@ serveropts = do
   serverTrust <- trustopts
   pure ServerOpts {..}
 
+type ClientServers = [(String, String)]
+
 data ClientOpts = ClientOpts
-  { clientServerHost :: String
-  , clientServerService :: String
-  , clientCert :: FilePath
+  { clientCert :: FilePath
   , clientCertChain :: [FilePath]
   , clientKey :: FilePath
   , clientTrust :: ClientTrustOpts
   } deriving (Show)
 
+parseHostService :: String -> (String, String)
+parseHostService hs =
+  case words hs of
+    [host] -> (host, "21012")
+    [host, service] -> (host, service)
+    _ -> error $ "could not parse server address: " ++ hs
+
+clientservers :: Parser ClientServers
+clientservers =
+  many . fmap parseHostService . strArgument
+    $ metavar "SERVER"
+        <> help
+             ("server(s) to connect to, in format HOSTNAME"
+                ++ " (defaulting to service port 21012),"
+                ++ " or space-separated \"HOSTNAME SERVICE\""
+                ++ " (e.g. \"www.example.com 21012\")")
+
+clientopts :: Parser ClientOpts
 clientopts = do
-  clientServerHost <-
-    strArgument $ metavar "HOST" <> help "host name to connect to"
-  clientServerService <-
-    strOption
-      $ long "service"
-          <> short 'p'
-          <> metavar "PORT"
-          <> value "21012"
-          <> showDefault
-          <> help "service identifier to connect to (typically a port number)"
   clientCert <-
     strOption
       $ long "cert"
@@ -300,11 +336,12 @@ data Cmd
   | StatsCmd StatsOpts InputOpts
   | SummaryCmd SummaryOpts InputOpts
   | AggregateCmd AggregateOpts
-  | ServerCmd ServerOpts InputOpts
-  | ClientTrainCmd ClientOpts TrainOpts
-  | ClientStatsCmd ClientOpts StatsOpts
+  | ServerCmd ServerOpts InputOpts Int
+  | ClientTrainCmd ClientServers ClientOpts TrainOpts
+  | ClientStatsCmd ClientServers ClientOpts StatsOpts
   deriving (Show)
 
+cmds :: [(String, String, Parser Cmd)]
 cmds =
   [ ( "generate"
     , "Generate a new SOM"
@@ -320,26 +357,25 @@ cmds =
     , "Aggregate multiple summarized commitments into a new SOM"
     , AggregateCmd <$> aggregateopts)
   , ( "server"
-    , "Run a server that computes SOM updates from local data for clients who train their own SOMs"
-    , ServerCmd <$> serveropts <*> inopts)
+    , "Run a server that computes SOM updates from local data"
+        ++ " for clients who train their own SOMs"
+    , ServerCmd <$> serveropts <*> inopts <*> dimopt)
   , ( "train-client"
     , "Train a SOM using data on remote servers"
-    , ClientTrainCmd <$> clientopts <*> trainopts)
+    , ClientTrainCmd <$> clientservers <*> clientopts <*> trainopts)
   , ( "stats-client"
     , "Generate stats from data on remote servers"
-    , ClientStatsCmd <$> clientopts <*> statsopts)
+    , ClientStatsCmd <$> clientservers <*> clientopts <*> statsopts)
   ]
 
 cmd :: Parser Cmd
 cmd = hsubparser $ foldMap (\(c, d, p) -> command c (info p (progDesc d))) cmds
 
-opts :: ParserInfo Cmd
-opts =
-  info
-    (cmd <**> helper <**> simpleVersioner (showVersion version))
-    (fullDesc
-       <> header "remotesom -- federated training of self-organizing-maps"
-       <> const mempty (footer "TODO license and contact"))
-
 parseOpts :: IO Cmd
-parseOpts = execParser opts
+parseOpts =
+  execParser
+    $ info
+        (cmd <**> helper <**> simpleVersioner (showVersion version))
+        (fullDesc
+           <> header "remotesom -- federated training of self-organizing-maps"
+           <> const mempty (footer "TODO license and contact"))
