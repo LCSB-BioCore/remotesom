@@ -60,7 +60,7 @@ LLVM-15. (To validate, check out if `llvm-config` command works for you and
 gives the correct version 15.) LLVM can be usually obtained from OS packages,
 typically under a name such as `llvm-15-dev` or similar.
 
-### Preparing the data (on each data host)
+### Prepare the data (on each data host)
 
 For SOMs, you usually take a dataset of N data points represented by
 D-dimensional feature vectors.
@@ -117,7 +117,7 @@ CA certificates for authentication, or omitting the authentication completely
 for debugging or other practical purposes. See the output `remotesom server
 --help` and `remotesom train-client --help`.
 
-### Prepare the network
+### Prepare the network (on data hosts)
 
 Data nodes must make sure that their server is reachable by direct TCP
 connection from the coordinator. This can be achieved in several ways:
@@ -135,7 +135,7 @@ ssh -N -R 21012:127.0.0.1:21012 myusername@myhpc-access.example.org
 ```
 Refer to documentation of `ssh` for details. 
 
-### Start data host servers
+### Start data host servers (on data hosts)
 
 Each data host starts their own server by pointing it to the appropriate
 cryptography keys and the local data source:
@@ -147,7 +147,7 @@ remotesom server \
 ```
 (The data size and dimension must be filled in, depending on the dataset.)
 
-### Run the training
+### Run the training (on coordinator)
 
 Once data hosts are ready, the coordinator runs several epochs of SOM training:
 ```sh
