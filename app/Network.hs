@@ -7,9 +7,25 @@ import qualified Network.Run.TCP as TCP
 import qualified Network.Socket as S
 import qualified Network.TLS as TLS
 
---import qualified Data.ByteString as B
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 import Data.String (fromString)
+import Data.Word (Word8)
+
+newlineChar :: Word8
+newlineChar = 10
+
+readTillNewline :: TLS.Context -> IO LB.ByteString
+readTillNewline ctx = go []
+  where
+    go buf = do
+      x <- TLS.recvData ctx
+      case () of
+        _
+          | B.null x -> error "EOF received before newline was read"
+          | Just ix <- B.elemIndex newlineChar x ->
+            pure . LB.fromChunks . reverse $ B.take ix x : buf
+          | otherwise -> go (x : buf)
 
 interactServer :: ServerOpts -> (LB.ByteString -> IO LB.ByteString) -> IO ()
 interactServer opts oracle = do
@@ -20,7 +36,7 @@ interactServer opts oracle = do
             (serverCertChain opts)
             (serverKey opts)
   TCP.runTCPServer (serverBindHost opts) (serverBindService opts) $ \sock -> do
-    -- TODO bracket all this
+    -- TODO this discards all errors, print them out instead
     let p = TLS.defaultParamsServer
         h = TLS.serverHooks p
         sh = TLS.serverShared p
@@ -40,11 +56,10 @@ interactServer opts oracle = do
               sh {TLS.sharedCredentials = TLS.Credentials [cred]}
           }
     TLS.handshake ctx
-    --TODO recv until \n\n
-    q <- LB.fromStrict <$> TLS.recvData ctx
+    q <- readTillNewline ctx
     r <- oracle q
     TLS.sendData ctx r
-    TLS.sendData ctx $ fromString "\n\n"
+    TLS.sendData ctx $ fromString "\n"
     TLS.bye ctx
     S.close sock
 
@@ -78,9 +93,8 @@ runClientQuery (host, service) opts query = do
             }
     TLS.handshake ctx
     TLS.sendData ctx query
-    TLS.sendData ctx $ fromString "\n\n"
-    -- TODO: recv data until \n\n
-    res <- LB.fromStrict <$> TLS.recvData ctx
+    TLS.sendData ctx $ fromString "\n"
+    res <- readTillNewline ctx
     TLS.bye ctx
     S.close sock
     return res

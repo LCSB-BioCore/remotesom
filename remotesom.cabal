@@ -49,6 +49,7 @@ executable remotesom
     , accelerate
     , accelerate-llvm-native
     , aeson
+    , async
     , base
     , bytestring
     , crypton-x509-validation

@@ -16,6 +16,7 @@ import Numeric.RemoteSOM.IO
   )
 import Opts
 
+import Control.Concurrent.Async (forConcurrently)
 import Control.Monad (unless)
 import qualified Data.Aeson as J
 import qualified Data.Array.Accelerate as A
@@ -86,7 +87,7 @@ run (ClientTrainCmd servers copts opts) = do
       trainWithClients som sigma = do
         let q = J.encode $ somArray som
         (sumss, countss) <-
-          fmap unzip . flip traverse servers $ \s ->
+          fmap unzip . forConcurrently servers $ \s ->
             either error arraySummary . J.eitherDecode
               <$> runClientQuery s copts q
         pure $ doAggregate nsom dim sumss countss topo sigma
