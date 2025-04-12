@@ -199,8 +199,9 @@ trustopts = do
     many . strOption
       $ long "accept-certificate"
           <> short 'a'
-          <> metavar "PEM"
-          <> help "trust peers who validate with a given certificate"
+          <> metavar "STORE"
+          <> help
+               "trust peers who validate with a certificate found in the given store (a PEM file with several certificates, or a PEM store directory)"
   trustSkipAllValidation <-
     flag False True
       $ long "DEBUG-INSECURE-ALLOW-EVERYONE-IN"
@@ -213,6 +214,7 @@ trustopts = do
 data ClientTrustOpts = ClientTrustOpts
   { ctrustOpts :: TrustOpts
   , ctrustValidateServerHostname :: Bool
+  , ctrustCommonName :: Maybe String
   } deriving (Show)
 
 ctrustopts :: Parser ClientTrustOpts
@@ -231,6 +233,14 @@ ctrustopts = do
             False
             (long "no-validate-hostname"
                <> help "do not validate server hostname")
+  ctrustCommonName <-
+    optional . strOption
+      $ long "server-common-name"
+          <> short 'N'
+          <> metavar "CN"
+          <> help
+               ("the common name to appear on a valid server certificate"
+                  ++ " (defaults to server hostname)")
   return ClientTrustOpts {..}
 
 data ServerOpts = ServerOpts

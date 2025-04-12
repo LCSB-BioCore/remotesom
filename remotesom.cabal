@@ -52,7 +52,9 @@ executable remotesom
     , async
     , base
     , bytestring
+    , crypton-x509
     , crypton-x509-validation
+    , crypton-x509-store
     , crypton-x509-system
     , network
     , network-run
