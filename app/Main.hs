@@ -38,6 +38,8 @@ readPoints :: InputOpts -> Int -> IO (A.Matrix Float)
 readPoints iopts dim =
   readArrayStorable (Z :. inputPoints iopts :. dim) (inputData iopts)
 
+-- TODO convert all LL.run to LL.runQ
+-- (accelerate precompilation doesn't like concurrency at all)
 run :: Cmd -> IO ()
 run (GenCmd opts so to) = do
   let (s, t) = runGen opts
