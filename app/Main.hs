@@ -24,6 +24,7 @@ import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import qualified Data.Array.Accelerate.LLVM.Native as LL
 import Data.Foldable (foldlM)
+import System.Random
 
 main :: IO ()
 main = parseOpts >>= run
@@ -47,7 +48,7 @@ readPoints iopts dim =
  -}
 run :: Cmd -> IO ()
 run (GenCmd opts so to) = do
-  let (s, t) = runGen opts
+  (s, t) <- runGen opts
   J.encodeFile so $ somArray s
   J.encodeFile to $ topoArray t
 run (TrainCmd opts iopts) = do
@@ -164,24 +165,29 @@ trainStartSOM :: TrainOpts -> IO (A.Matrix Float, A.Matrix Float)
 trainStartSOM opts =
   case trainSomIn opts of
     Left (gopts, to) -> do
-      let (sa, ta) = runGen gopts
-          ts = topoArray ta
-      J.encodeFile to ts
+      (sa, ta) <- runGen gopts
+      J.encodeFile to (topoArray ta)
       pure (sa, ta)
     Right (si, ti) -> do
       (,) <$> (arraySOM <$> decodeFile si) <*> (arrayTopo <$> decodeFile ti)
 
-runGen :: GenOpts -> (A.Matrix Float, A.Matrix Float)
-runGen opts = (centroids, topology)
-  where
-    somn = genX opts * genY opts
-    coords = (`divMod` genX opts)
-    somsqdist i j =
-      let (a, b) = coords i
-          (c, d) = coords j
-       in (a - c) * (a - c) + (b - d) * (b - d)
-    centroids = A.fromFunction (Z :. somn :. genDim opts) (const 0)
-    topology =
-      A.fromFunction
-        (Z :. somn :. somn)
-        (\(Z :. i :. j) -> fromIntegral $ somsqdist i j)
+runGen :: GenOpts -> IO (A.Matrix Float, A.Matrix Float)
+runGen opts = do
+  let somn = genX opts * genY opts
+      coords = (`divMod` genX opts)
+      somsqdist i j =
+        let (a, b) = coords i
+            (c, d) = coords j
+         in (a - c) * (a - c) + (b - d) * (b - d)
+      topology =
+        A.fromFunction
+          (Z :. somn :. somn)
+          (\(Z :. i :. j) -> fromIntegral $ somsqdist i j)
+  centroids <-
+    A.fromList (Z :. somn :. genDim opts)
+      . fst
+      . uniformListR (somn * genDim opts) (-1, 1)
+      <$> case genSeed opts of
+            Just s -> pure $ mkStdGen s
+            Nothing -> initStdGen
+  pure (centroids, topology)

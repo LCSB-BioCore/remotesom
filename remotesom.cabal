@@ -59,6 +59,7 @@ executable remotesom
     , network
     , network-run
     , optparse-applicative
+    , random
     , remotesom
     , tls
 
