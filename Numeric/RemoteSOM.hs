@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Numeric.RemoteSOM where
 
@@ -7,17 +8,16 @@ import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Function ((&))
 
 somSumCounts ::
-     A.Matrix Float
-  -> A.Matrix Float
-  -> (A.Acc (A.Matrix Float), A.Acc (A.Vector Int))
-somSumCounts points som = (sums, counts)
+     A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float, A.Vector Int)
+somSumCounts points som = A.lift (sums, counts)
   where
-    pts, somn :: Int
-    (Z :. pts :. _) = A.arrayShape points
-    (Z :. somn :. dim) = A.arrayShape som
-    expts =
-      A.replicate (A.constant $ Z :. A.All :. somn :. A.All) $ A.use points
-    exsom = A.replicate (A.constant $ Z :. pts :. A.All :. A.All) $ A.use som
+    pts, somn, dim :: A.Exp Int
+    (Z :. pts :. (_ :: A.Exp Int)) = A.unlift $ A.shape points
+    (Z :. somn :. dim) = A.unlift $ A.shape som
+    expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
+    exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
     closest =
       A.zipWith (-) expts exsom
         & A.map (\x -> x * x)
@@ -28,36 +28,38 @@ somSumCounts points som = (sums, counts)
     sums =
       A.permute
         (+)
-        (A.constant (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
+        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
-        (A.use points)
+        points
     counts =
       A.permute
         (+)
-        (A.constant (Z :. somn) `A.fill` A.constant (0 :: Int))
+        (A.lift (Z :. somn) `A.fill` A.constant (0 :: Int))
         (\ix -> A.Just_ . A.I1 $ closest A.! ix)
-        (A.constant (Z :. pts) `A.fill` A.constant (1 :: Int))
+        (A.lift (Z :. pts) `A.fill` A.constant (1 :: Int))
 
 somSmoothWeights ::
-     Int -> A.Acc (A.Matrix Float) -> Float -> A.Acc (A.Matrix Float)
+     A.Acc (A.Scalar Int)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Scalar Float)
+  -> A.Acc (A.Matrix Float)
 somSmoothWeights somn gsqdists sigma = weights
   where
-    factor = (-1) / (sigma * sigma)
-    gweights = A.map (\x -> A.exp (x * A.constant factor)) gsqdists
+    factor = negate . recip $ A.the sigma * A.the sigma
+    gweights = A.map (\x -> A.exp (x * factor)) gsqdists
     wfactors = A.map A.recip $ dodgeZero $ A.sum gweights
     weights =
       A.zipWith (*) gweights
-        $ A.replicate (A.constant (Z :. A.All :. (somn :: Int))) wfactors
+        $ A.replicate (A.lift $ Z :. A.All :. A.the somn) wfactors
 
 gemm ::
      A.Acc (A.Array (Z :. Int :. Int) Float)
   -> A.Acc (A.Array (Z :. Int :. Int) Float)
   -> A.Acc (A.Array (Z :. Int :. Int) Float)
 gemm l r =
-  let lw, lh, rw, rh :: A.Exp Int
-      (Z :. lw :. lh) = A.unlift (A.shape l)
-      (Z :. rw :. rh) = A.unlift (A.shape r)
-      (ow, oh, dim) = (rw, lh, rh)
+  let ow, oh :: A.Exp Int
+      (Z :. (_ :: A.Exp Int) :. oh) = A.unlift (A.shape l)
+      (Z :. ow :. (_ :: A.Exp Int)) = A.unlift (A.shape r)
    in A.sum
         $ A.zipWith
             (*)
@@ -72,33 +74,33 @@ dodgeZero ::
 dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
 
 somAggregate ::
-     Int
-  -> Int
+     A.Acc (A.Scalar Int)
+  -> A.Acc (A.Scalar Int)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Vector Int)
   -> A.Acc (A.Matrix Float)
-  -> Float
+  -> A.Acc (A.Scalar Float)
   -> A.Acc (A.Matrix Float)
 somAggregate somn dim sums counts gsqdists sigma =
   A.zipWith (/) sumsS (dodgeZero countsS)
   where
     smoothWeights = somSmoothWeights somn gsqdists sigma
     sumsS = gemm sums smoothWeights
-    countsS :: A.Acc (A.Array (Z :. Int :. Int) Float)
     countsS =
       gemm
-        (A.replicate (A.constant $ Z :. A.All :. dim)
+        (A.replicate (A.lift $ Z :. A.All :. A.the dim)
            $ A.map A.fromIntegral counts)
         smoothWeights
 
 somIter ::
-     A.Matrix Float
+     A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
-  -> A.Matrix Float
-  -> Float
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Scalar Float)
   -> A.Acc (A.Matrix Float)
 somIter points gsqdists som sigma =
-  somAggregate somn dim sums counts gsqdists sigma
+  somAggregate (A.unit somn) (A.unit dim) sums counts gsqdists sigma
   where
-    (Z :. somn :. dim) = A.arrayShape som
-    (sums, counts) = somSumCounts points som
+    somn, dim :: A.Exp Int
+    (Z :. somn :. dim) = A.unlift $ A.shape som
+    (sums, counts) = A.unlift $ somSumCounts points som
