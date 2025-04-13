@@ -88,7 +88,7 @@ run (ServerCmd sopts iopts dim) = do
     unless (dim == dim') $ error "som dimensions do not match"
     pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
 run (ClientTrainCmd servers copts opts) = do
-  unless (not $ null servers) $ error "No servers to connect to."
+  unless (not $ null servers) $ error "no servers to connect to"
   (som0, topo) <- trainStartSOM opts
   let (Z :. nsom :. dim) = A.arrayShape som0
       trainWithClients som sigma = do
@@ -100,7 +100,7 @@ run (ClientTrainCmd servers copts opts) = do
         pure $ aggregate nsom dim sumss countss topo sigma
   som <- foldlM trainWithClients som0 (trainSigmas opts)
   J.encodeFile (trainSomOut opts) (somArray som)
-run _ = putStrLn "Not implemented yet."
+run _ = error "not implemented yet"
 
 {-
  - Accelerate.LLVM.Native adaptors
