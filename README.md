@@ -43,7 +43,7 @@ In summary, you need to:
 4. prepare the network connections and start the data-host servers
 5. run the coordinator client
 
-## Installation
+### Installation
 
 `remotesom` is best installed with `cabal` directly from the cloned repository:
 ```sh
@@ -60,7 +60,7 @@ LLVM-15. (To validate, check out if `llvm-config` command works for you and
 gives the correct version 15.) LLVM can be usually obtained from OS packages,
 typically under a name such as `llvm-15-dev` or similar.
 
-## Prepare the data (on each data host)
+### Prepare the data (on each data host)
 
 For SOMs, you usually take a dataset of N data points represented by
 D-dimensional feature vectors.
