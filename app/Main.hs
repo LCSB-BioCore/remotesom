@@ -1,10 +1,11 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Main where
 
 import Network
-import Numeric.RemoteSOM (somAggregate, somIter, somSumCounts)
+import Numeric.RemoteSOM (arraySum, somAggregate, somIter, somSumCounts)
 import Numeric.RemoteSOM.IO
   ( arraySOM
   , arraySummary
@@ -27,6 +28,9 @@ import Data.Foldable (foldlM)
 main :: IO ()
 main = parseOpts >>= run
 
+{-
+ - IO helpers
+ -}
 decodeFile :: J.FromJSON a => FilePath -> IO a
 decodeFile file = do
   x <- J.eitherDecodeFileStrict file
@@ -38,8 +42,9 @@ readPoints :: InputOpts -> Int -> IO (A.Matrix Float)
 readPoints iopts dim =
   readArrayStorable (Z :. inputPoints iopts :. dim) (inputData iopts)
 
--- TODO convert all LL.run to LL.runQ
--- (accelerate precompilation doesn't like concurrency at all)
+{-
+ - Interpreter for the command from the args
+ -}
 run :: Cmd -> IO ()
 run (GenCmd opts so to) = do
   let (s, t) = runGen opts
@@ -51,7 +56,7 @@ run (TrainCmd opts iopts) = do
   points <- readPoints iopts dim
   let som =
         foldl
-          (\s sigma -> LL.run $ somIter points (A.use topo) s sigma)
+          (\s sigma -> somIterLL points topo s (scalar sigma))
           som0
           (trainSigmas opts)
   J.encodeFile (trainSomOut opts) (somArray som)
@@ -59,8 +64,8 @@ run (SummaryCmd opts iopts) = do
   som <- arraySOM <$> decodeFile (summarySomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
   points <- readPoints iopts dim
-  let (s, c) = somSumCounts points som
-  J.encodeFile (summaryOut opts) $ summaryArray (LL.run s) (LL.run c)
+  J.encodeFile (summaryOut opts) . uncurry summaryArray
+    $ somSumCountsLL points som
 run (AggregateCmd opts) = do
   (sumss, countss) <-
     unzip
@@ -72,7 +77,7 @@ run (AggregateCmd opts) = do
           (s:_) -> s
       (Z :. nsom :. dim) = A.arrayShape sums0
       som =
-        somArray $ doAggregate nsom dim sumss countss topo (aggregateSigma opts)
+        somArray $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
   J.encodeFile (aggregateSomOut opts) som
 run (ServerCmd sopts iopts dim) = do
   points <- readPoints iopts dim
@@ -80,8 +85,7 @@ run (ServerCmd sopts iopts dim) = do
     let som = either error arraySOM $ J.eitherDecode query
         (Z :. _ :. dim') = A.arrayShape som
     unless (dim == dim') $ error "som dimensions do not match"
-    let (s, c) = somSumCounts points som
-    pure . J.encode $ summaryArray (LL.run s) (LL.run c)
+    pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
 run (ClientTrainCmd servers copts opts) = do
   unless (not $ null servers) $ error "No servers to connect to."
   (som0, topo) <- trainStartSOM opts
@@ -92,10 +96,69 @@ run (ClientTrainCmd servers copts opts) = do
           fmap unzip . forConcurrently servers $ \s ->
             either error arraySummary . J.eitherDecode
               <$> runClientQuery s copts q
-        pure $ doAggregate nsom dim sumss countss topo sigma
+        pure $ aggregate nsom dim sumss countss topo sigma
   som <- foldlM trainWithClients som0 (trainSigmas opts)
   J.encodeFile (trainSomOut opts) (somArray som)
 run _ = putStrLn "Not implemented yet."
+
+{-
+ - Accelerate.LLVM.Native adaptors
+ -}
+scalar :: A.Elt a => a -> A.Scalar a
+scalar x = A.fromList Z [x]
+
+arraySumIntVecLL :: A.Vector Int -> A.Vector Int -> A.Vector Int
+arraySumIntVecLL = LL.runN arraySum
+
+arraySumFloatMtxLL :: A.Matrix Float -> A.Matrix Float -> A.Matrix Float
+arraySumFloatMtxLL = LL.runN arraySum
+
+somIterLL ::
+     A.Matrix Float
+  -> A.Matrix Float
+  -> A.Matrix Float
+  -> A.Scalar Float
+  -> A.Matrix Float
+somIterLL = LL.runN somIter
+
+somAggregateLL ::
+     A.Scalar Int
+  -> A.Scalar Int
+  -> A.Matrix Float
+  -> A.Vector Int
+  -> A.Matrix Float
+  -> A.Scalar Float
+  -> A.Matrix Float
+somAggregateLL = LL.runN somAggregate
+
+somSumCountsLL ::
+     A.Matrix Float -> A.Matrix Float -> (A.Matrix Float, A.Vector Int)
+somSumCountsLL = LL.runN somSumCounts
+
+{-
+ - Base operations
+ -}
+aggregate ::
+     Int
+  -> Int
+  -> [A.Matrix Float]
+  -> [A.Vector Int]
+  -> A.Matrix Float
+  -> Float
+  -> A.Matrix Float
+aggregate nsom dim sumss countss topo sigma
+  | all ((== (Z :. nsom :. dim)) . A.arrayShape) sumss
+      && all ((== (Z :. nsom)) . A.arrayShape) countss =
+    let sums = foldl1 arraySumFloatMtxLL sumss
+        counts = foldl1 arraySumIntVecLL countss
+     in somAggregateLL
+          (scalar nsom)
+          (scalar dim)
+          sums
+          counts
+          topo
+          (scalar sigma)
+  | otherwise = error "summary dimensions do not match"
 
 trainStartSOM :: TrainOpts -> IO (A.Matrix Float, A.Matrix Float)
 trainStartSOM opts =
@@ -107,22 +170,6 @@ trainStartSOM opts =
       pure (sa, ta)
     Right (si, ti) -> do
       (,) <$> (arraySOM <$> decodeFile si) <*> (arrayTopo <$> decodeFile ti)
-
-doAggregate ::
-     Int
-  -> Int
-  -> [A.Matrix Float]
-  -> [A.Vector Int]
-  -> A.Matrix Float
-  -> Float
-  -> A.Matrix Float
-doAggregate nsom dim sumss countss topo sigma
-  | all ((== (Z :. nsom :. dim)) . A.arrayShape) sumss
-      && all ((== (Z :. nsom)) . A.arrayShape) countss =
-    let sums = foldl1 (A.zipWith (+)) (map A.use sumss)
-        counts = foldl1 (A.zipWith (+)) (map A.use countss)
-     in LL.run $ somAggregate nsom dim sums counts (A.use topo) sigma
-  | otherwise = error "summary dimensions do not match"
 
 runGen :: GenOpts -> (A.Matrix Float, A.Matrix Float)
 runGen opts = (centroids, topology)

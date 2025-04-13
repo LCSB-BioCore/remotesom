@@ -1,5 +1,6 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Numeric.RemoteSOM where
 
@@ -45,7 +46,8 @@ somSmoothWeights ::
   -> A.Acc (A.Matrix Float)
 somSmoothWeights somn gsqdists sigma = weights
   where
-    factor = negate . recip $ A.the sigma * A.the sigma
+    sigma' = dodgeZero sigma
+    factor = negate . recip $ A.the sigma' * A.the sigma'
     gweights = A.map (\x -> A.exp (x * factor)) gsqdists
     wfactors = A.map A.recip $ dodgeZero $ A.sum gweights
     weights =
@@ -91,6 +93,13 @@ somAggregate somn dim sums counts gsqdists sigma =
         (A.replicate (A.lift $ Z :. A.All :. A.the dim)
            $ A.map A.fromIntegral counts)
         smoothWeights
+
+arraySum ::
+     (A.Shape sh, A.Elt a, Num (A.Exp a))
+  => A.Acc (A.Array sh a)
+  -> A.Acc (A.Array sh a)
+  -> A.Acc (A.Array sh a)
+arraySum = A.zipWith (+)
 
 somIter ::
      A.Acc (A.Matrix Float)
