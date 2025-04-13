@@ -21,7 +21,7 @@ batch:
 
 - The data hosts compute "sums" and "counts" of their data points, grouped by
   the nearest-neighboring SOM node,
-- the coordinator gathers all such commitments, applies the neigborhood
+- the coordinator gathers all such commitments, applies the neighborhood
   function, and continues with more iterations (and smaller neighborhood
   functions) as needed.
 
@@ -92,7 +92,7 @@ remotesom train \
 
 This will output
 
-It is adviseable for all data hosts to locally verify that their data is in a
+It is advisable for all data hosts to locally verify that their data is in a
 good shape to train at least a local SOM before starting the federated
 training.
 
@@ -148,7 +148,7 @@ connection from the coordinator. This can be achieved in several ways:
 
 The SSH forwarding typically uses the `ssh -R` approach. In the following
 example, port 21012 on the remote server (HPC access nodes are great for
-tunelling!) is forwarded to port 21012 on 127.0.0.1 (aka `localhost`), where
+tunneling!) is forwarded to port 21012 on 127.0.0.1 (aka `localhost`), where
 the `remotesom server` is expected to run.
 ```sh
 ssh -N -R 21012:127.0.0.1:21012 myusername@myhpc-access.example.org
