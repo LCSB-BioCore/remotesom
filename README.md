@@ -69,12 +69,23 @@ To feed this data to `remotesom`, you need to format it as an array of D×N raw
 32-bit `float`s. The data must be "row major", i.e., the data should form
 groups of D `float`s each representing one of the N data points.
 
-If you have a matrix in R with features in columns (which is the usual setup),
-you can export it as follows:
+For example, if you have a matrix in R with features in columns (which is the
+usual setup), you can export it as follows:
 
 ```r
 writeBin(as.vector(t(myMatrix)), "mydata.bin", size=4)
 ```
+
+Other languages possess similar facilities; in Julia you can write binary data
+using this code:
+```julia
+open("mydata.bin", "w") do f
+    write(f, Float32.(my_matrix'))
+end
+```
+
+With numpy, you can equivalently use
+[`ndarray.tofile`](https://numpy.org/devdocs/reference/generated/numpy.ndarray.tofile.html).
 
 ### Test the training locally (on data hosts)
 
