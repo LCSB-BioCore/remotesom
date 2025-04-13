@@ -391,7 +391,7 @@ cmd = hsubparser $ foldMap (\(c, d, p) -> command c (info p (progDesc d))) cmds
 
 parseOpts :: IO Cmd
 parseOpts =
-  execParser
+  customExecParser (prefs $ showHelpOnEmpty <> helpShowGlobals)
     $ info
         (cmd <**> helper <**> simpleVersioner (showVersion version))
         (fullDesc
