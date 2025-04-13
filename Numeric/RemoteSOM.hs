@@ -6,6 +6,10 @@ import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Function ((&))
 
+somSumCounts ::
+     A.Matrix Float
+  -> A.Matrix Float
+  -> (A.Acc (A.Matrix Float), A.Acc (A.Vector Int))
 somSumCounts points som = (sums, counts)
   where
     pts, somn :: Int
@@ -34,6 +38,8 @@ somSumCounts points som = (sums, counts)
         (\ix -> A.Just_ . A.I1 $ closest A.! ix)
         (A.constant (Z :. pts) `A.fill` A.constant (1 :: Int))
 
+somSmoothWeights ::
+     Int -> A.Acc (A.Matrix Float) -> Float -> A.Acc (A.Matrix Float)
 somSmoothWeights somn gsqdists sigma = weights
   where
     factor = (-1) / (sigma * sigma)
@@ -61,6 +67,8 @@ gemm l r =
 epsilon :: Float
 epsilon = 1e-7
 
+dodgeZero ::
+     (A.Shape sh) => A.Acc (A.Array sh Float) -> A.Acc (A.Array sh Float)
 dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
 
 somAggregate ::
@@ -83,6 +91,12 @@ somAggregate somn dim sums counts gsqdists sigma =
            $ A.map A.fromIntegral counts)
         smoothWeights
 
+somIter ::
+     A.Matrix Float
+  -> A.Acc (A.Matrix Float)
+  -> A.Matrix Float
+  -> Float
+  -> A.Acc (A.Matrix Float)
 somIter points gsqdists som sigma =
   somAggregate somn dim sums counts gsqdists sigma
   where
