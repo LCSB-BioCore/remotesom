@@ -200,6 +200,18 @@ If everything runs well, the trained 10×10 SOM will appear in `som.json`.
 
 # FAQ
 
+#### Is the training reproducible?
+
+Given the same architecture, same data on data hosts, same order of data-host
+connections and same initial training SOM, the training is mathematically
+reproducible, and should not be a subject to floating-point robustness errors.
+
+To get a fixed initial SOM instead of a random one,  use parameter `-R` to the
+generating&training commands.
+
+Please open an issue if you detect any reproducibility issues caused by
+floating-point robustness&rounding errors.
+
 #### Can I use a different SOM topology?
 
 Yes; you can input any SOM and any topology to the training commands using
