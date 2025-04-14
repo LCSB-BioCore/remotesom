@@ -216,6 +216,25 @@ generating&training commands.
 Please open an issue if you detect any reproducibility issues caused by
 floating-point robustness&rounding errors.
 
+#### How much data can be processed at once?
+
+In the current implementation, each data host has to load the input binary data
+into memory; which puts a practical limit of several gigabytes per data host.
+In general, you should have more memory than N×D×4 bytes. If you run out of
+memory, you can split the dataset into several data hosts without any impact on
+the result. In turn, this enables horizontal scalability --- the amount of data
+processed at once is only limited by the amount of computers you can attach to
+the analysis.
+
+The training coordinator node has to keep the SOM topology in the memory.
+Because we store a "generic" all-to-all distance topology file, this puts a
+limit on the size of the self-organizing map that you can train. If the SOM
+size is K nodes (typically, K=`som-x`×`som-y`), you need to fit (K²+K×D)×4
+bytes into the memory. On a modest computer with 16GB of memory, this thus
+allows you to train a SOM of around 65 thousand centroids, which is a grid of
+roughly 250×250 centroids. Typically, practical SOM grid sizes never exceed
+100×100, and in for most cases 32×32 is more than sufficient.
+
 #### Can I use a different SOM topology?
 
 Yes; you can input any SOM and any topology to the training commands using
