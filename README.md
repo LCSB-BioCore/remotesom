@@ -105,7 +105,12 @@ remotesom train \
   -D mydata.bin -n "<DATA SIZE N>"
 ```
 
-This will output
+This will output the trained SOM in `out-test-som.json`. The JSON file will
+contain an array of arrays of numbers; each of the arrays represents one
+feature vector that corresponds to one SOM centroid. The SOM topology is output
+in `out-test-topoology.json` as squared distances of the SOM nodes in the map
+space (i.e., *not* the centroids in data space), the JSON contains array of
+arrays of numbers which form columns of all-to-all distance matrix.
 
 It is advisable for all data hosts to locally verify that their data is in a
 good shape to train at least a local SOM before starting the federated
