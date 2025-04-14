@@ -46,8 +46,8 @@ somSmoothWeights ::
   -> A.Acc (A.Matrix Float)
 somSmoothWeights somn gsqdists sigma = weights
   where
-    sigma' = dodgeZero sigma
-    factor = negate . recip $ A.the sigma' * A.the sigma'
+    sigma' = A.the $ dodgeZero sigma
+    factor = negate $ recip (sigma' * sigma')
     gweights = A.map (\x -> A.exp (x * factor)) gsqdists
     wfactors = A.map A.recip $ dodgeZero $ A.sum gweights
     weights =
