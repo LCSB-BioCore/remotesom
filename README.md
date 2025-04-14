@@ -58,7 +58,11 @@ compiler, use [GHCup](https://www.haskell.org/ghcup/).
 To compile successfully, you also need a working development installation of
 LLVM-15. (To validate, check out if `llvm-config` command works for you and
 gives the correct version 15.) LLVM can be usually obtained from OS packages,
-typically under a name such as `llvm-15-dev` or similar.
+typically under a name such as `llvm-15-dev` or similar. LLVM is required for
+Accelerate framework to optimize the numeric code for your platform; for
+additional details on the installation see [the appropriate section of the
+documentation of
+accelerate-llvm](https://github.com/AccelerateHS/accelerate-llvm/blob/master/README.md#installing-llvm).
 
 ### Prepare the data (on each data host)
 
