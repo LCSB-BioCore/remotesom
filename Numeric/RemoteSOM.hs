@@ -23,30 +23,54 @@ import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Function ((&))
 
+somClosest ::
+     A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
+somClosest points som =
+  A.zipWith (-) expts exsom
+    & A.map (\x -> x * x)
+    & A.sum
+    & A.imap (\ix v -> A.lift (v, A.indexHead ix))
+    & A.minimum
+    & A.map A.snd
+  where
+    pts, somn :: A.Exp Int
+    (Z :. pts :. (_ :: A.Exp Int)) = A.unlift $ A.shape points
+    (Z :. somn :. (_ :: A.Exp Int)) = A.unlift $ A.shape som
+    expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
+    exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
+
 somSumCounts ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Vector Int)
-somSumCounts points som = A.lift (sums, counts)
+somSumCounts pts som = A.lift (s, c)
+  where
+    s :: A.Acc (A.Matrix Float)
+    c :: A.Acc (A.Vector Int)
+    (s, (_ :: A.Acc (A.Matrix Float)), c) = A.unlift $ somSumSqsumCounts pts som
+
+somSumSqsumCounts ::
+     A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
+somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
   where
     pts, somn, dim :: A.Exp Int
     (Z :. pts :. (_ :: A.Exp Int)) = A.unlift $ A.shape points
     (Z :. somn :. dim) = A.unlift $ A.shape som
-    expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
-    exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
-    closest =
-      A.zipWith (-) expts exsom
-        & A.map (\x -> x * x)
-        & A.sum
-        & A.imap (\ix v -> A.lift (v, A.indexHead ix))
-        & A.minimum
-        & A.map A.snd
+    closest = somClosest points som
     sums =
       A.permute
         (+)
         (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
         points
+    sqsums =
+      A.permute
+        (+)
+        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
+        (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
+        (A.map (\x -> x * x) points)
     counts =
       A.permute
         (+)
@@ -128,3 +152,52 @@ somIter points gsqdists som sigma =
     somn, dim :: A.Exp Int
     (Z :. somn :. dim) = A.unlift $ A.shape som
     (sums, counts) = A.unlift $ somSumCounts points som
+
+somLtCounts ::
+     A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Int)
+somLtCounts points som thresholds =
+  A.backpermute
+    (A.shape points)
+    (\(A.I2 pix dimi) -> A.I2 (closest A.! A.I1 pix) dimi)
+    thresholds
+    & A.zipWith (A.<) points
+    & A.map (flip (A.?) (A.constant 1, A.constant 0))
+    & A.permute
+        (+)
+        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Int))
+        (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
+  where
+    somn, dim :: A.Exp Int
+    (Z :. somn :. dim) = A.unlift $ A.shape som
+    closest = somClosest points som
+
+somMedianInit ::
+     A.Acc (A.Scalar Float)
+  -> A.Acc (A.Scalar Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float, A.Matrix Float)
+somMedianInit lb ub som = A.lift (A.fill sh $ A.the lb, A.fill sh $ A.the ub)
+  where
+    sh = A.shape som
+
+somMedianCountStep ::
+     A.Acc (A.Matrix Int)
+  -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float, A.Matrix Float)
+  -> A.Acc (A.Matrix Float, A.Matrix Float)
+somMedianCountStep ltcounts counts bs =
+  A.lift
+    ( A.zipWith3 (curry . (A.?)) toolow med lbs
+    , A.zipWith3 (curry . (A.?)) toolow ubs med)
+  where
+    (lbs, ubs) = A.unlift bs
+    (A.I2 _ dim) = A.shape ltcounts
+    med = A.map (/ 2) $ A.zipWith (+) lbs ubs
+    toolow =
+      A.zipWith
+        (A.<)
+        (A.map (* 2) ltcounts)
+        (A.replicate (A.lift $ Z :. A.All :. dim) counts)
