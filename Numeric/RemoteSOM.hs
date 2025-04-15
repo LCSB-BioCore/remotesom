@@ -33,9 +33,8 @@ somClosest points som =
     & A.minimum
     & A.map A.snd
   where
-    pts, somn :: A.Exp Int
-    (Z :. pts :. (_ :: A.Exp Int)) = A.unlift $ A.shape points
-    (Z :. somn :. (_ :: A.Exp Int)) = A.unlift $ A.shape som
+    (A.I2 pts _) = A.shape points
+    (A.I2 somn _) = A.shape som
     expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
     exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
 
@@ -43,10 +42,9 @@ somSumCounts ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Vector Int)
-somSumCounts pts som = A.lift (s, c)
+somSumCounts pts som =
+  A.lift (s :: A.Acc (A.Matrix Float), c :: A.Acc (A.Vector Int))
   where
-    s :: A.Acc (A.Matrix Float)
-    c :: A.Acc (A.Vector Int)
     (s, (_ :: A.Acc (A.Matrix Float)), c) = A.unlift $ somSumSqsumCounts pts som
 
 somSumSqsumCounts ::
@@ -55,26 +53,25 @@ somSumSqsumCounts ::
   -> A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
 somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
   where
-    pts, somn, dim :: A.Exp Int
-    (Z :. pts :. (_ :: A.Exp Int)) = A.unlift $ A.shape points
-    (Z :. somn :. dim) = A.unlift $ A.shape som
+    (A.I2 pts  _) = A.shape points
+    (A.I2 somn dim) = A.shape som
     closest = somClosest points som
     sums =
       A.permute
         (+)
-        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
+        (A.I2 somn dim `A.fill` A.constant (0 :: Float))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
         points
     sqsums =
       A.permute
         (+)
-        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Float))
+        (A.I2 somn dim `A.fill` A.constant (0 :: Float))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
         (A.map (\x -> x * x) points)
     counts =
       A.permute
         (+)
-        (A.lift (Z :. somn) `A.fill` A.constant (0 :: Int))
+        (A.I1 somn `A.fill` A.constant (0 :: Int))
         (\ix -> A.Just_ . A.I1 $ closest A.! ix)
         (A.lift (Z :. pts) `A.fill` A.constant (1 :: Int))
 
@@ -94,13 +91,12 @@ somSmoothWeights somn gsqdists sigma = weights
         $ A.replicate (A.lift $ Z :. A.All :. A.the somn) wfactors
 
 gemm ::
-     A.Acc (A.Array (Z :. Int :. Int) Float)
-  -> A.Acc (A.Array (Z :. Int :. Int) Float)
-  -> A.Acc (A.Array (Z :. Int :. Int) Float)
+     A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
 gemm l r =
-  let ow, oh :: A.Exp Int
-      (Z :. (_ :: A.Exp Int) :. oh) = A.unlift (A.shape l)
-      (Z :. ow :. (_ :: A.Exp Int)) = A.unlift (A.shape r)
+  let (A.I2 _ oh) = A.shape l
+      (A.I2 ow _) = A.shape r
    in A.sum
         $ A.zipWith
             (*)
@@ -149,8 +145,7 @@ somIter ::
 somIter points gsqdists som sigma =
   somAggregate (A.unit somn) (A.unit dim) sums counts gsqdists sigma
   where
-    somn, dim :: A.Exp Int
-    (Z :. somn :. dim) = A.unlift $ A.shape som
+    (A.I2 somn dim) = A.shape som
     (sums, counts) = A.unlift $ somSumCounts points som
 
 somLtCounts ::
@@ -167,7 +162,7 @@ somLtCounts points som thresholds =
     & A.map (flip (A.?) (A.constant 1, A.constant 0))
     & A.permute
         (+)
-        (A.lift (Z :. somn :. dim) `A.fill` A.constant (0 :: Int))
+        (A.I2 somn dim `A.fill` A.constant (0 :: Int))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
   where
     somn, dim :: A.Exp Int
