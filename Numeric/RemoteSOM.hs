@@ -53,7 +53,7 @@ somSumSqsumCounts ::
   -> A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
 somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
   where
-    (A.I2 pts  _) = A.shape points
+    (A.I2 pts _) = A.shape points
     (A.I2 somn dim) = A.shape som
     closest = somClosest points som
     sums =
@@ -91,9 +91,7 @@ somSmoothWeights somn gsqdists sigma = weights
         $ A.replicate (A.lift $ Z :. A.All :. A.the somn) wfactors
 
 gemm ::
-     A.Acc (A.Matrix Float)
-  -> A.Acc (A.Matrix Float)
-  -> A.Acc (A.Matrix Float)
+     A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float)
 gemm l r =
   let (A.I2 _ oh) = A.shape l
       (A.I2 ow _) = A.shape r
