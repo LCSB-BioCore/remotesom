@@ -20,15 +20,13 @@
 module Main where
 
 import Network
-import Numeric.RemoteSOM (arraySum, somAggregate, somIter, somSumCounts)
+import Numeric.RemoteSOM
 import Numeric.RemoteSOM.IO
-  ( arraySOM
+  ( arrayMatrix
   , arraySummary
-  , arrayTopo
+  , matrixArray
   , readArrayStorable
-  , somArray
   , summaryArray
-  , topoArray
   )
 import Opts
 
@@ -58,14 +56,18 @@ readPoints :: InputOpts -> Int -> IO (A.Matrix Float)
 readPoints iopts dim =
   readArrayStorable (Z :. inputPoints iopts :. dim) (inputData iopts)
 
+withJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
+withJust (Just x) m = m x
+withJust _ _ = pure ()
+
 {-
  - Interpreter for the command from the args
  -}
 run :: Cmd -> IO ()
 run (GenCmd opts so to) = do
   (s, t) <- runGen opts
-  J.encodeFile so $ somArray s
-  J.encodeFile to $ topoArray t
+  J.encodeFile so $ matrixArray s
+  J.encodeFile to $ matrixArray t
 run (TrainCmd opts iopts) = do
   (som0, topo) <- trainStartSOM opts
   let (Z :. _ :. dim) = A.arrayShape som0
@@ -75,9 +77,21 @@ run (TrainCmd opts iopts) = do
           (\s sigma -> somIterLL points topo s (scalar sigma))
           som0
           (trainSigmas opts)
-  J.encodeFile (trainSomOut opts) (somArray som)
+  J.encodeFile (trainSomOut opts) (matrixArray som)
+run (StatsCmd opts iopts) = do
+  som <- arrayMatrix <$> decodeFile (statsSomIn opts)
+  let (Z :. _ :. dim) = A.arrayShape som
+  points <- readPoints iopts dim
+  let (sums, sqsums, counts) = somSumSqsumCountsLL points som
+  withJust (statsMeansOut opts) $ \o -> do
+    J.encodeFile o . matrixArray $ somMeansLL sums counts
+  withJust (statsCountsOut opts) $ \o -> do
+    J.encodeFile o $ A.toList counts
+  withJust (statsVariancesOut opts) $ \o -> do
+    J.encodeFile o . matrixArray $ somVariancesLL sums sqsums counts
+  withJust (statsMedians opts) $ \mo -> undefined
 run (SummaryCmd opts iopts) = do
-  som <- arraySOM <$> decodeFile (summarySomIn opts)
+  som <- arrayMatrix <$> decodeFile (summarySomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
   points <- readPoints iopts dim
   J.encodeFile (summaryOut opts) . uncurry summaryArray
@@ -86,19 +100,20 @@ run (AggregateCmd opts) = do
   (sumss, countss) <-
     unzip
       <$> traverse (fmap arraySummary . decodeFile) (aggregateSummaryIn opts)
-  topo <- arrayTopo <$> decodeFile (aggregateTopoIn opts)
+  topo <- arrayMatrix <$> decodeFile (aggregateTopoIn opts)
   let sums0 =
         case sumss of
           [] -> error "no data to aggregate"
           (s:_) -> s
       (Z :. nsom :. dim) = A.arrayShape sums0
       som =
-        somArray $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
+        matrixArray
+          $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
   J.encodeFile (aggregateSomOut opts) som
 run (ServerCmd sopts iopts dim) = do
   points <- readPoints iopts dim
   interactServer sopts $ \query -> do
-    let som = either error arraySOM $ J.eitherDecode query
+    let som = either error arrayMatrix $ J.eitherDecode query
         (Z :. _ :. dim') = A.arrayShape som
     unless (dim == dim') $ error "som dimensions do not match"
     pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
@@ -107,14 +122,14 @@ run (ClientTrainCmd servers copts opts) = do
   (som0, topo) <- trainStartSOM opts
   let (Z :. nsom :. dim) = A.arrayShape som0
       trainWithClients som sigma = do
-        let q = J.encode $ somArray som
+        let q = J.encode $ matrixArray som
         (sumss, countss) <-
           fmap unzip . forConcurrently servers $ \s ->
             either error arraySummary . J.eitherDecode
               <$> runClientQuery s copts q
         pure $ aggregate nsom dim sumss countss topo sigma
   som <- foldlM trainWithClients som0 (trainSigmas opts)
-  J.encodeFile (trainSomOut opts) (somArray som)
+  J.encodeFile (trainSomOut opts) (matrixArray som)
 run _ = error "not implemented yet"
 
 {-
@@ -137,6 +152,13 @@ somIterLL ::
   -> A.Matrix Float
 somIterLL = LL.runN somIter
 
+somVariancesLL ::
+     A.Matrix Float -> A.Matrix Float -> A.Vector Int -> A.Matrix Float
+somVariancesLL = LL.runN somVariances
+
+somMeansLL :: A.Matrix Float -> A.Vector Int -> A.Matrix Float
+somMeansLL = LL.runN somMeans
+
 somAggregateLL ::
      A.Scalar Int
   -> A.Scalar Int
@@ -150,6 +172,12 @@ somAggregateLL = LL.runN somAggregate
 somSumCountsLL ::
      A.Matrix Float -> A.Matrix Float -> (A.Matrix Float, A.Vector Int)
 somSumCountsLL = LL.runN somSumCounts
+
+somSumSqsumCountsLL ::
+     A.Matrix Float
+  -> A.Matrix Float
+  -> (A.Matrix Float, A.Matrix Float, A.Vector Int)
+somSumSqsumCountsLL = LL.runN somSumSqsumCounts
 
 {-
  - Base operations
@@ -181,10 +209,12 @@ trainStartSOM opts =
   case trainSomIn opts of
     Left (gopts, to) -> do
       (sa, ta) <- runGen gopts
-      J.encodeFile to (topoArray ta)
+      J.encodeFile to (matrixArray ta)
       pure (sa, ta)
     Right (si, ti) -> do
-      (,) <$> (arraySOM <$> decodeFile si) <*> (arrayTopo <$> decodeFile ti)
+      (,)
+        <$> (arrayMatrix <$> decodeFile si)
+        <*> (arrayMatrix <$> decodeFile ti)
 
 runGen :: GenOpts -> IO (A.Matrix Float, A.Matrix Float)
 runGen opts = do
