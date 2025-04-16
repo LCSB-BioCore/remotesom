@@ -164,10 +164,10 @@ somIter points gsqdists som sigma =
  -}
 somLtCounts ::
      A.Acc (A.Matrix Float)
-  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Vector Int)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Int)
-somLtCounts points som thresholds =
+somLtCounts points closest thresholds =
   A.backpermute
     (A.shape points)
     (\(A.I2 pix dimi) -> A.I2 (closest A.! A.I1 pix) dimi)
@@ -179,9 +179,8 @@ somLtCounts points som thresholds =
         (A.I2 somn dim `A.fill` A.constant (0 :: Int))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
   where
-    somn, dim :: A.Exp Int
-    (Z :. somn :. dim) = A.unlift $ A.shape som
-    closest = somClosest points som
+    (A.I1 somn) = A.shape closest
+    (A.I2 _ dim) = A.shape points
 
 somMedianInit ::
      A.Acc (A.Scalar Float)
@@ -192,19 +191,24 @@ somMedianInit lb ub som = A.lift (A.fill sh $ A.the lb, A.fill sh $ A.the ub)
   where
     sh = A.shape som
 
+somMedianMed :: A.Acc (A.Matrix Float, A.Matrix Float) -> A.Acc (A.Matrix Float)
+somMedianMed bs = A.map (/ 2) $ A.zipWith (+) lbs ubs
+  where
+    (lbs, ubs) = A.unlift bs
+
 somMedianCountStep ::
      A.Acc (A.Matrix Int)
   -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Matrix Float)
-somMedianCountStep ltcounts counts bs =
+somMedianCountStep ltcounts counts med bs =
   A.lift
     ( A.zipWith3 (curry . (A.?)) toolow med lbs
     , A.zipWith3 (curry . (A.?)) toolow ubs med)
   where
     (lbs, ubs) = A.unlift bs
     (A.I2 _ dim) = A.shape ltcounts
-    med = A.map (/ 2) $ A.zipWith (+) lbs ubs
     toolow =
       A.zipWith
         (A.<)

@@ -14,7 +14,6 @@
  - limitations under the License.
  -}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
 
 module Main where
@@ -89,7 +88,16 @@ run (StatsCmd opts iopts) = do
     J.encodeFile o $ A.toList counts
   withJust (statsVariancesOut opts) $ \o -> do
     J.encodeFile o . matrixArray $ somVariancesLL sums sqsums counts
-  withJust (statsMedians opts) $ \mo -> undefined
+  withJust (statsMedians opts) $ \mo -> do
+    let (lb, ub) = mediansBounds mo
+        bs0 = somMedianInitLL (scalar lb) (scalar ub) som
+        cs = somClosestLL points som
+        step bs =
+          let med = somMedianMedLL bs
+              ltcs = somLtCountsLL points cs med
+           in somMedianCountStepLL ltcs counts med bs
+    J.encodeFile (mediansOut mo) . matrixArray . somMedianMedLL
+      $ iterate step bs0 !! mediansIters mo
 run (SummaryCmd opts iopts) = do
   som <- arrayMatrix <$> decodeFile (summarySomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
@@ -151,6 +159,31 @@ somIterLL ::
   -> A.Scalar Float
   -> A.Matrix Float
 somIterLL = LL.runN somIter
+
+somClosestLL :: A.Matrix Float -> A.Matrix Float -> A.Vector Int
+somClosestLL = LL.runN somClosest
+
+somLtCountsLL ::
+     A.Matrix Float -> A.Vector Int -> A.Matrix Float -> A.Matrix Int
+somLtCountsLL = LL.runN somLtCounts
+
+somMedianInitLL ::
+     A.Scalar Float
+  -> A.Scalar Float
+  -> A.Matrix Float
+  -> (A.Matrix Float, A.Matrix Float)
+somMedianInitLL = LL.runN somMedianInit
+
+somMedianMedLL :: (A.Matrix Float, A.Matrix Float) -> A.Matrix Float
+somMedianMedLL = LL.runN somMedianMed
+
+somMedianCountStepLL ::
+     A.Matrix Int
+  -> A.Vector Int
+  -> A.Matrix Float
+  -> (A.Matrix Float, A.Matrix Float)
+  -> (A.Matrix Float, A.Matrix Float)
+somMedianCountStepLL = LL.runN somMedianCountStep
 
 somVariancesLL ::
      A.Matrix Float -> A.Matrix Float -> A.Vector Int -> A.Matrix Float
