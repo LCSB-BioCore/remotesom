@@ -23,6 +23,38 @@ import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Function ((&))
 
+{-
+ - Helper functions
+ -}
+gemm ::
+     A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float)
+gemm l r =
+  let (A.I2 _ oh) = A.shape l
+      (A.I2 ow _) = A.shape r
+   in A.sum
+        $ A.zipWith
+            (*)
+            (A.replicate (A.lift $ Z :. ow :. A.All :. A.All) $ A.transpose l)
+            (A.replicate (A.lift $ Z :. A.All :. oh :. A.All) r)
+
+epsilon :: Float
+epsilon = 1e-7
+
+dodgeZero ::
+     (A.Shape sh) => A.Acc (A.Array sh Float) -> A.Acc (A.Array sh Float)
+dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
+
+-- well-typed alias
+arraySum ::
+     (A.Shape sh, A.Elt a, Num (A.Exp a))
+  => A.Acc (A.Array sh a)
+  -> A.Acc (A.Array sh a)
+  -> A.Acc (A.Array sh a)
+arraySum = A.zipWith (+)
+
+{-
+ - Basic neighborhood-exploring operations
+ -}
 somClosest ::
      A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
 somClosest points som =
@@ -75,27 +107,9 @@ somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
         (\ix -> A.Just_ . A.I1 $ closest A.! ix)
         (A.lift (Z :. pts) `A.fill` A.constant (1 :: Int))
 
-variances ::
-     A.Shape sh
-  => A.Acc (A.Array sh Float, A.Array sh Float, A.Array sh Int)
-  -> A.Acc (A.Array sh Float)
-variances ssc = A.zipWith (-) (mean sqsums) (mean $ A.map (\x -> x * x) sums)
-  where
-    (sums, sqsums, counts) = A.unlift ssc
-    fcounts = A.map A.fromIntegral counts
-    mean x = A.zipWith (/) x fcounts
-
-somVariances ::
-     A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
-  -> A.Acc (A.Matrix Float)
-somVariances ssc = variances $ A.lift (sums, sqsums, countss)
-  where
-    sums, sqsums :: A.Acc (A.Matrix Float)
-    counts :: A.Acc (A.Vector Int)
-    (sums, sqsums, counts) = A.unlift ssc
-    (A.I2 _ dim) = A.shape sums
-    countss = A.replicate (A.lift $ Z :. A.All :. dim) counts
-
+{-
+ - Neighborhood function application
+ -}
 somSmoothWeights ::
      A.Acc (A.Scalar Int)
   -> A.Acc (A.Matrix Float)
@@ -110,24 +124,6 @@ somSmoothWeights somn gsqdists sigma = weights
     weights =
       A.zipWith (*) gweights
         $ A.replicate (A.lift $ Z :. A.All :. A.the somn) wfactors
-
-gemm ::
-     A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float)
-gemm l r =
-  let (A.I2 _ oh) = A.shape l
-      (A.I2 ow _) = A.shape r
-   in A.sum
-        $ A.zipWith
-            (*)
-            (A.replicate (A.lift $ Z :. ow :. A.All :. A.All) $ A.transpose l)
-            (A.replicate (A.lift $ Z :. A.All :. oh :. A.All) r)
-
-epsilon :: Float
-epsilon = 1e-7
-
-dodgeZero ::
-     (A.Shape sh) => A.Acc (A.Array sh Float) -> A.Acc (A.Array sh Float)
-dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
 
 somAggregate ::
      A.Acc (A.Scalar Int)
@@ -148,13 +144,9 @@ somAggregate somn dim sums counts gsqdists sigma =
            $ A.map A.fromIntegral counts)
         smoothWeights
 
-arraySum ::
-     (A.Shape sh, A.Elt a, Num (A.Exp a))
-  => A.Acc (A.Array sh a)
-  -> A.Acc (A.Array sh a)
-  -> A.Acc (A.Array sh a)
-arraySum = A.zipWith (+)
-
+{-
+ - Compound helper that does everything
+ -}
 somIter ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
@@ -167,6 +159,9 @@ somIter points gsqdists som sigma =
     (A.I2 somn dim) = A.shape som
     (sums, counts) = A.unlift $ somSumCounts points som
 
+{-
+ - Statistic computation helpers
+ -}
 somLtCounts ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
@@ -215,3 +210,39 @@ somMedianCountStep ltcounts counts bs =
         (A.<)
         (A.map (* 2) ltcounts)
         (A.replicate (A.lift $ Z :. A.All :. dim) counts)
+
+variances ::
+     A.Shape sh
+  => A.Acc (A.Array sh Float)
+  -> A.Acc (A.Array sh Float)
+  -> A.Acc (A.Array sh Int)
+  -> A.Acc (A.Array sh Float)
+variances sums sqsums counts =
+  A.zipWith
+    (-)
+    (means sqsums counts)
+    (A.map (\x -> x * x) $ sums `means` counts)
+
+means ::
+     A.Shape sh
+  => A.Acc (A.Array sh Float)
+  -> A.Acc (A.Array sh Int)
+  -> A.Acc (A.Array sh Float)
+means sums = A.zipWith (/) sums . dodgeZero . A.map A.fromIntegral
+
+somVariances ::
+     A.Acc (A.Matrix Float)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float)
+somVariances sums sqsums counts = variances sums sqsums countss
+  where
+    (A.I2 _ dim) = A.shape sums
+    countss = A.replicate (A.lift $ Z :. A.All :. dim) counts
+
+somMeans ::
+     A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int) -> A.Acc (A.Matrix Float)
+somMeans sums counts = means sums countss
+  where
+    (A.I2 _ dim) = A.shape sums
+    countss = A.replicate (A.lift $ Z :. A.All :. dim) counts
