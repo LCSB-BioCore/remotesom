@@ -75,6 +75,27 @@ somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
         (\ix -> A.Just_ . A.I1 $ closest A.! ix)
         (A.lift (Z :. pts) `A.fill` A.constant (1 :: Int))
 
+variances ::
+     A.Shape sh
+  => A.Acc (A.Array sh Float, A.Array sh Float, A.Array sh Int)
+  -> A.Acc (A.Array sh Float)
+variances ssc = A.zipWith (-) (mean sqsums) (mean $ A.map (\x -> x * x) sums)
+  where
+    (sums, sqsums, counts) = A.unlift ssc
+    fcounts = A.map A.fromIntegral counts
+    mean x = A.zipWith (/) x fcounts
+
+somVariances ::
+     A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
+  -> A.Acc (A.Matrix Float)
+somVariances ssc = variances $ A.lift (sums, sqsums, countss)
+  where
+    sums, sqsums :: A.Acc (A.Matrix Float)
+    counts :: A.Acc (A.Vector Int)
+    (sums, sqsums, counts) = A.unlift ssc
+    (A.I2 _ dim) = A.shape sums
+    countss = A.replicate (A.lift $ Z :. A.All :. dim) counts
+
 somSmoothWeights ::
      A.Acc (A.Scalar Int)
   -> A.Acc (A.Matrix Float)
