@@ -456,7 +456,8 @@ parseOpts =
         (cmd <**> helper <**> simpleVersioner (showVersion version))
         (fullDesc
            <> header "remotesom -- federated training of self-organizing-maps"
-           <> (footer $ "Copyright (c) University of Luxembourg."
-                   ++ " remotesom is developed at Luxembourg Centre for Systems Biomedicine,"
-                   ++ " and distributed under the terms of Apache-2.0 license."
-                   ++ " See https://github.com/LCSB-BioCore/remotesom for details and source."))
+           <> (footer
+                 $ "Copyright (c) University of Luxembourg."
+                     ++ " remotesom is developed at Luxembourg Centre for Systems Biomedicine,"
+                     ++ " and distributed under the terms of Apache-2.0 license."
+                     ++ " See https://github.com/LCSB-BioCore/remotesom for details and source."))
