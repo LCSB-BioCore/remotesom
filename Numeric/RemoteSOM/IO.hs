@@ -74,29 +74,19 @@ writeArrayTSV a fp =
         . map show
         $ A.toList a
 
-somArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
-somArray c = chunks dim $ A.toList c
+matrixArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
+matrixArray c = chunks dim $ A.toList c
   where
     (Z :. _ :. dim) = A.arrayShape c
 
-arraySOM :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
-arraySOM c = A.fromList (Z :. nsom :. dim) $ concat c
+arrayMatrix :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
+arrayMatrix c = A.fromList (Z :. nsom :. dim) $ concat c
   where
     nsom = length c
     dim =
       case c of
         (c0:_) -> length c0
-        _ -> error "empty SOM"
-
-topoArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
-topoArray t = chunks nsom $ A.toList t
-  where
-    (Z :. _ :. nsom) = A.arrayShape t
-
-arrayTopo :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
-arrayTopo t = A.fromList (Z :. nsom :. nsom) $ concat t
-  where
-    nsom = length t
+        _ -> error "empty matrix"
 
 data DataSummary f = DataSummary
   { sums :: [[f]]
