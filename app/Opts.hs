@@ -139,20 +139,65 @@ trainopts = do
           ++ " each occurence implies a training epoch)"
   pure TrainOpts {..}
 
+data MedianOpts = MedianOpts
+  { mediansOut :: FilePath
+  , mediansBounds :: (Float, Float)
+  , mediansIters :: Int
+  } deriving (Show)
+
+medianopts :: Parser MedianOpts
+medianopts = do
+  mediansOut <-
+    strOption
+      $ long "out-medians"
+          <> metavar "OUTFILE"
+          <> help "write per-cluster medians to this file"
+  mediansBounds <-
+    (,)
+      <$> option
+            auto
+            (long "median-min"
+               <> metavar "LB"
+               <> help "lower bound for the median approximation")
+      <*> option
+            auto
+            (long "median-max"
+               <> metavar "UB"
+               <> help "upper bound for the median approximation")
+  mediansIters <-
+    option auto
+      $ long "median-iters"
+          <> metavar "N"
+          <> help "nummber of iterations of the median approximation"
+  pure MedianOpts {..}
+
 data StatsOpts = StatsOpts
   { statsSomIn :: FilePath
-  , statsOut :: FilePath
+  , statsMeansOut :: Maybe FilePath
+  , statsCountsOut :: Maybe FilePath
+  , statsVariancesOut :: Maybe FilePath
+  , statsMedians :: Maybe MedianOpts
   } deriving (Show)
 
 statsopts :: Parser StatsOpts
 statsopts = do
   statsSomIn <- somin
-  statsOut <-
-    strOption
-      $ long "out-stats"
-          <> short 'S'
+  statsMeansOut <-
+    optional . strOption
+      $ long "out-means"
           <> metavar "OUTFILE"
-          <> help "write the statistics to this file"
+          <> help "write the cluster means to this file"
+  statsCountsOut <-
+    optional . strOption
+      $ long "out-counts"
+          <> metavar "OUTFILE"
+          <> help "write the cluster occupancy counts to this file"
+  statsVariancesOut <-
+    optional . strOption
+      $ long "out-variances"
+          <> metavar "OUTFILE"
+          <> help "write the intra-cluster variances to this file"
+  statsMedians <- optional medianopts
   pure StatsOpts {..}
 
 data SummaryOpts = SummaryOpts
