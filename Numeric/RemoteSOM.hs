@@ -182,6 +182,15 @@ somLtCounts points closest thresholds =
     (A.I1 somn) = A.shape closest
     (A.I2 _ dim) = A.shape points
 
+somCounts ::
+     A.Acc (A.Scalar Int) -> A.Acc (A.Vector Int) -> A.Acc (A.Vector Int)
+somCounts n closest =
+  A.permute
+    (+)
+    (A.I1 (A.the n) `A.fill` A.constant 0)
+    (\ix -> A.Just_ $ A.I1 (closest A.! ix))
+    (A.shape closest `A.fill` A.constant 1)
+
 somMedianInit ::
      A.Acc (A.Scalar Float)
   -> A.Acc (A.Scalar Float)

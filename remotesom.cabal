@@ -23,11 +23,13 @@ library
   exposed-modules:
     Numeric.RemoteSOM
     Numeric.RemoteSOM.IO
+    Numeric.RemoteSOM.RunN
 
   -- other-modules:
 
   build-depends:
     , accelerate
+    , accelerate-llvm-native
     , aeson
     , base
     , storablevector
@@ -47,7 +49,6 @@ executable remotesom
   other-modules:    Paths_remotesom
   build-depends:
     , accelerate
-    , accelerate-llvm-native
     , aeson
     , async
     , base

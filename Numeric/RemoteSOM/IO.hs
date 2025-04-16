@@ -74,12 +74,12 @@ writeArrayTSV a fp =
         . map show
         $ A.toList a
 
-matrixArray :: A.Elt f => A.Array (Z :. Int :. Int) f -> [[f]]
+matrixArray :: A.Elt f => A.Matrix f -> [[f]]
 matrixArray c = chunks dim $ A.toList c
   where
     (Z :. _ :. dim) = A.arrayShape c
 
-arrayMatrix :: A.Elt f => [[f]] -> A.Array ((Z :. Int) :. Int) f
+arrayMatrix :: A.Elt f => [[f]] -> A.Matrix f
 arrayMatrix c = A.fromList (Z :. nsom :. dim) $ concat c
   where
     nsom = length c
@@ -89,25 +89,18 @@ arrayMatrix c = A.fromList (Z :. nsom :. dim) $ concat c
         _ -> error "empty matrix"
 
 data DataSummary f = DataSummary
-  { sums :: [[f]]
-  , counts :: [Int]
+  { dsSums :: [[f]]
+  , dsCounts :: [Int]
   } deriving (Show, Generic, J.FromJSON, J.ToJSON)
 
-summaryArray ::
-     A.Elt f
-  => A.Array (Z :. Int :. Int) f
-  -> A.Array (Z :. Int) Int
-  -> DataSummary f
+summaryArray :: A.Elt f => A.Matrix f -> A.Vector Int -> DataSummary f
 summaryArray s c =
-  DataSummary {sums = chunks dim $ A.toList s, counts = A.toList c}
+  DataSummary {dsSums = chunks dim $ A.toList s, dsCounts = A.toList c}
   where
     (Z :. _ :. dim) = A.arrayShape s
 
-arraySummary ::
-     A.Elt f
-  => DataSummary f
-  -> (A.Array (Z :. Int :. Int) f, A.Array (Z :. Int) Int)
-arraySummary DataSummary {sums = s, counts = c} =
+arraySummary :: A.Elt f => DataSummary f -> (A.Matrix f, A.Vector Int)
+arraySummary DataSummary {dsSums = s, dsCounts = c} =
   (A.fromList (Z :. nsom :. dim) $ concat s, A.fromList (Z :. nsom) c)
   where
     nsom = length s
@@ -115,3 +108,59 @@ arraySummary DataSummary {sums = s, counts = c} =
       case s of
         (s0:_) -> length s0
         _ -> error "empty sum"
+
+data DataStatsSummary f = DataStatsSummary
+  { dssSums :: [[f]]
+  , dssSqsums :: [[f]]
+  , dssCounts :: [Int]
+  } deriving (Show, Generic, J.FromJSON, J.ToJSON)
+
+statsSummaryArray ::
+     A.Elt f => A.Matrix f -> A.Matrix f -> A.Vector Int -> DataStatsSummary f
+statsSummaryArray s sq c =
+  DataStatsSummary
+    { dssSums = chunks dim $ A.toList s
+    , dssSqsums = chunks dim $ A.toList sq
+    , dssCounts = A.toList c
+    }
+  where
+    (Z :. _ :. dim) = A.arrayShape s
+
+arrayStatsSummary ::
+     A.Elt f => DataStatsSummary f -> (A.Matrix f, A.Matrix f, A.Vector Int)
+arrayStatsSummary DataStatsSummary {dssSums = s, dssSqsums = sq, dssCounts = c} =
+  ( A.fromList (Z :. nsom :. dim) $ concat s
+  , A.fromList (Z :. nsom :. dim) $ concat sq
+  , A.fromList (Z :. nsom) c)
+  where
+    nsom = length s
+    dim =
+      case s of
+        (s0:_) -> length s0
+        _ -> error "empty sum"
+
+data LtCs = LtCs
+  { ltcLess :: [[Int]]
+  , ltcCounts :: [Int]
+  } deriving (Show, Generic, J.FromJSON, J.ToJSON)
+
+ltCsArray :: A.Matrix Int -> A.Vector Int -> LtCs
+ltCsArray l c = LtCs {ltcLess = chunks dim $ A.toList l, ltcCounts = A.toList c}
+  where
+    (Z :. _ :. dim) = A.arrayShape l
+
+arrayLtCs :: LtCs -> (A.Matrix Int, A.Vector Int)
+arrayLtCs LtCs {ltcLess = l, ltcCounts = c} =
+  (A.fromList (Z :. nsom :. dim) $ concat l, A.fromList (Z :. nsom) c)
+  where
+    nsom = length l
+    dim =
+      case l of
+        (l0:_) -> length l0
+        _ -> error "empty less"
+
+data Query f
+  = QueryDataSummary [[f]]
+  | QueryStats [[f]]
+  | QueryLessThan [[f]] [[f]]
+  deriving (Show, Generic, J.FromJSON, J.ToJSON)

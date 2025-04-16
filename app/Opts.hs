@@ -419,6 +419,8 @@ data Cmd
   | ClientStatsCmd ClientServers ClientOpts StatsOpts
   deriving (Show)
 
+-- TODO: it might be viable to also have "manual" commands for the medians
+-- approximator, if anyone would ever like to run that by hand.
 cmds :: [(String, String, Parser Cmd)]
 cmds =
   [ ( "generate"

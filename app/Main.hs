@@ -19,14 +19,8 @@
 module Main where
 
 import Network
-import Numeric.RemoteSOM
 import Numeric.RemoteSOM.IO
-  ( arrayMatrix
-  , arraySummary
-  , matrixArray
-  , readArrayStorable
-  , summaryArray
-  )
+import Numeric.RemoteSOM.RunN
 import Opts
 
 import Control.Concurrent.Async (forConcurrently)
@@ -34,15 +28,15 @@ import Control.Monad (unless)
 import qualified Data.Aeson as J
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
-import qualified Data.Array.Accelerate.LLVM.Native as LL
 import Data.Foldable (foldlM)
+import Data.List (foldl1')
 import System.Random
 
 main :: IO ()
 main = parseOpts >>= run
 
 {-
- - IO helpers
+ - IO and helpers
  -}
 decodeFile :: J.FromJSON a => FilePath -> IO a
 decodeFile file = do
@@ -59,14 +53,28 @@ withJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
 withJust (Just x) m = m x
 withJust _ _ = pure ()
 
+scalar :: A.Elt a => a -> A.Scalar a
+scalar x = A.fromList Z [x]
+
+uncurry3 :: (a -> b -> c -> r) -> (a, b, c) -> r
+uncurry3 f (a, b, c) = f a b c
+
+iterateN :: (a -> a) -> Int -> (a -> a)
+iterateN f n a = foldr (const f) a [1 .. n]
+
+iterateNM :: Monad m => (a -> m a) -> Int -> (a -> m a)
+iterateNM f n a = foldlM (const . f) a [1 .. n]
+
 {-
  - Interpreter for the command from the args
  -}
 run :: Cmd -> IO ()
+-- generate a new SOM
 run (GenCmd opts so to) = do
   (s, t) <- runGen opts
   J.encodeFile so $ matrixArray s
   J.encodeFile to $ matrixArray t
+-- local training
 run (TrainCmd opts iopts) = do
   (som0, topo) <- trainStartSOM opts
   let (Z :. _ :. dim) = A.arrayShape som0
@@ -77,17 +85,13 @@ run (TrainCmd opts iopts) = do
           som0
           (trainSigmas opts)
   J.encodeFile (trainSomOut opts) (matrixArray som)
+-- local statistics output
 run (StatsCmd opts iopts) = do
   som <- arrayMatrix <$> decodeFile (statsSomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
   points <- readPoints iopts dim
   let (sums, sqsums, counts) = somSumSqsumCountsLL points som
-  withJust (statsMeansOut opts) $ \o -> do
-    J.encodeFile o . matrixArray $ somMeansLL sums counts
-  withJust (statsCountsOut opts) $ \o -> do
-    J.encodeFile o $ A.toList counts
-  withJust (statsVariancesOut opts) $ \o -> do
-    J.encodeFile o . matrixArray $ somVariancesLL sums sqsums counts
+  outputSSCStats opts sums sqsums counts
   withJust (statsMedians opts) $ \mo -> do
     let (lb, ub) = mediansBounds mo
         bs0 = somMedianInitLL (scalar lb) (scalar ub) som
@@ -97,13 +101,15 @@ run (StatsCmd opts iopts) = do
               ltcs = somLtCountsLL points cs med
            in somMedianCountStepLL ltcs counts med bs
     J.encodeFile (mediansOut mo) . matrixArray . somMedianMedLL
-      $ iterate step bs0 !! mediansIters mo
+      $ iterateN step (mediansIters mo) bs0
+-- manual training summary step
 run (SummaryCmd opts iopts) = do
   som <- arrayMatrix <$> decodeFile (summarySomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
   points <- readPoints iopts dim
   J.encodeFile (summaryOut opts) . uncurry summaryArray
     $ somSumCountsLL points som
+-- manual training aggregation step
 run (AggregateCmd opts) = do
   (sumss, countss) <-
     unzip
@@ -118,19 +124,39 @@ run (AggregateCmd opts) = do
         matrixArray
           $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
   J.encodeFile (aggregateSomOut opts) som
+-- run a server
 run (ServerCmd sopts iopts dim) = do
   points <- readPoints iopts dim
-  interactServer sopts $ \query -> do
-    let som = either error arrayMatrix $ J.eitherDecode query
-        (Z :. _ :. dim') = A.arrayShape som
-    unless (dim == dim') $ error "som dimensions do not match"
-    pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
+  interactServer sopts $ \q ->
+    case either error id $ J.eitherDecode q of
+      QueryDataSummary som' -> do
+        let som = arrayMatrix som'
+            (Z :. _ :. dim') = A.arrayShape som
+        unless (dim == dim') $ error "som dimensions do not match"
+        pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
+      QueryStats som' -> do
+        let som = arrayMatrix som'
+            (Z :. _ :. dim') = A.arrayShape som
+        unless (dim == dim') $ error "som dimensions do not match"
+        pure . J.encode . uncurry3 statsSummaryArray
+          $ somSumSqsumCountsLL points som
+      QueryLessThan som' med' -> do
+        let som = arrayMatrix som'
+            med = arrayMatrix med'
+            sh@(Z :. nsom :. dim') = A.arrayShape som
+        unless (sh == A.arrayShape med && dim == dim')
+          $ error "sizes do not match"
+        let cs = somClosestLL points som
+            counts = somCountsLL (scalar nsom) cs
+            ltcs = somLtCountsLL points cs med
+        pure . J.encode $ ltCsArray ltcs counts
+-- run the training client
 run (ClientTrainCmd servers copts opts) = do
   unless (not $ null servers) $ error "no servers to connect to"
   (som0, topo) <- trainStartSOM opts
   let (Z :. nsom :. dim) = A.arrayShape som0
       trainWithClients som sigma = do
-        let q = J.encode $ matrixArray som
+        let q = J.encode . QueryDataSummary $ matrixArray som
         (sumss, countss) <-
           fmap unzip . forConcurrently servers $ \s ->
             either error arraySummary . J.eitherDecode
@@ -138,79 +164,39 @@ run (ClientTrainCmd servers copts opts) = do
         pure $ aggregate nsom dim sumss countss topo sigma
   som <- foldlM trainWithClients som0 (trainSigmas opts)
   J.encodeFile (trainSomOut opts) (matrixArray som)
-run _ = error "not implemented yet"
-
-{-
- - Accelerate.LLVM.Native adaptors
- -}
-scalar :: A.Elt a => a -> A.Scalar a
-scalar x = A.fromList Z [x]
-
-arraySumIntVecLL :: A.Vector Int -> A.Vector Int -> A.Vector Int
-arraySumIntVecLL = LL.runN arraySum
-
-arraySumFloatMtxLL :: A.Matrix Float -> A.Matrix Float -> A.Matrix Float
-arraySumFloatMtxLL = LL.runN arraySum
-
-somIterLL ::
-     A.Matrix Float
-  -> A.Matrix Float
-  -> A.Matrix Float
-  -> A.Scalar Float
-  -> A.Matrix Float
-somIterLL = LL.runN somIter
-
-somClosestLL :: A.Matrix Float -> A.Matrix Float -> A.Vector Int
-somClosestLL = LL.runN somClosest
-
-somLtCountsLL ::
-     A.Matrix Float -> A.Vector Int -> A.Matrix Float -> A.Matrix Int
-somLtCountsLL = LL.runN somLtCounts
-
-somMedianInitLL ::
-     A.Scalar Float
-  -> A.Scalar Float
-  -> A.Matrix Float
-  -> (A.Matrix Float, A.Matrix Float)
-somMedianInitLL = LL.runN somMedianInit
-
-somMedianMedLL :: (A.Matrix Float, A.Matrix Float) -> A.Matrix Float
-somMedianMedLL = LL.runN somMedianMed
-
-somMedianCountStepLL ::
-     A.Matrix Int
-  -> A.Vector Int
-  -> A.Matrix Float
-  -> (A.Matrix Float, A.Matrix Float)
-  -> (A.Matrix Float, A.Matrix Float)
-somMedianCountStepLL = LL.runN somMedianCountStep
-
-somVariancesLL ::
-     A.Matrix Float -> A.Matrix Float -> A.Vector Int -> A.Matrix Float
-somVariancesLL = LL.runN somVariances
-
-somMeansLL :: A.Matrix Float -> A.Vector Int -> A.Matrix Float
-somMeansLL = LL.runN somMeans
-
-somAggregateLL ::
-     A.Scalar Int
-  -> A.Scalar Int
-  -> A.Matrix Float
-  -> A.Vector Int
-  -> A.Matrix Float
-  -> A.Scalar Float
-  -> A.Matrix Float
-somAggregateLL = LL.runN somAggregate
-
-somSumCountsLL ::
-     A.Matrix Float -> A.Matrix Float -> (A.Matrix Float, A.Vector Int)
-somSumCountsLL = LL.runN somSumCounts
-
-somSumSqsumCountsLL ::
-     A.Matrix Float
-  -> A.Matrix Float
-  -> (A.Matrix Float, A.Matrix Float, A.Vector Int)
-somSumSqsumCountsLL = LL.runN somSumSqsumCounts
+-- run the stats-gathering client
+run (ClientStatsCmd servers copts opts) = do
+  unless (not $ null servers) $ error "no servers to connect to"
+  som <- arrayMatrix <$> decodeFile (statsSomIn opts)
+  (sumss, sqsumss, countss) <-
+    fmap unzip3 . forConcurrently servers $ \s ->
+      either error arrayStatsSummary . J.eitherDecode
+        <$> runClientQuery
+              s
+              copts
+              (J.encode $ QueryStats (matrixArray som :: [[Float]]))
+  let sums = foldl1' arraySumFloatMtxLL sumss
+      sqsums = foldl1' arraySumFloatMtxLL sqsumss
+      counts = foldl1' arraySumIntVecLL countss
+  outputSSCStats opts sums sqsums counts
+  withJust (statsMedians opts) $ \mo -> do
+    let (lb, ub) = mediansBounds mo
+        bs0 = somMedianInitLL (scalar lb) (scalar ub) som
+        step bs = do
+          let med = somMedianMedLL bs
+          (ltcss, mcountss) <-
+            fmap unzip . forConcurrently servers $ \s ->
+              either error arrayLtCs . J.eitherDecode
+                <$> runClientQuery
+                      s
+                      copts
+                      (J.encode
+                         $ QueryLessThan (matrixArray som) (matrixArray med))
+          let ltcs = foldl1' arraySumIntMtxLL ltcss
+              mcounts = foldl1' arraySumIntVecLL mcountss
+          pure $ somMedianCountStepLL ltcs mcounts med bs
+    bs' <- iterateNM step (mediansIters mo) bs0
+    J.encodeFile (mediansOut mo) . matrixArray $ somMedianMedLL bs'
 
 {-
  - Base operations
@@ -226,8 +212,8 @@ aggregate ::
 aggregate nsom dim sumss countss topo sigma
   | all ((== (Z :. nsom :. dim)) . A.arrayShape) sumss
       && all ((== (Z :. nsom)) . A.arrayShape) countss =
-    let sums = foldl1 arraySumFloatMtxLL sumss
-        counts = foldl1 arraySumIntVecLL countss
+    let sums = foldl1' arraySumFloatMtxLL sumss
+        counts = foldl1' arraySumIntVecLL countss
      in somAggregateLL
           (scalar nsom)
           (scalar dim)
@@ -269,3 +255,13 @@ runGen opts = do
             Just s -> pure $ mkStdGen s
             Nothing -> initStdGen
   pure (centroids, topology)
+
+outputSSCStats ::
+     StatsOpts -> A.Matrix Float -> A.Matrix Float -> A.Vector Int -> IO ()
+outputSSCStats opts sums sqsums counts = do
+  withJust (statsMeansOut opts) $ \o -> do
+    J.encodeFile o . matrixArray $ somMeansLL sums counts
+  withJust (statsCountsOut opts) $ \o -> do
+    J.encodeFile o $ A.toList counts
+  withJust (statsVariancesOut opts) $ \o -> do
+    J.encodeFile o . matrixArray $ somVariancesLL sums sqsums counts
