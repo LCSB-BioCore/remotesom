@@ -45,6 +45,7 @@ decodeFile file = do
     Left err -> error $ "error loading " ++ file ++ ": " ++ err
     Right x' -> pure x'
 
+-- TODO mmap instead: https://hackage.haskell.org/package/accelerate-io-1.3.0.0/docs/Data-Array-Accelerate-IO-Foreign-ForeignPtr.html
 readPoints :: InputOpts -> Int -> IO (A.Matrix Float)
 readPoints iopts dim =
   readArrayStorable (Z :. inputPoints iopts :. dim) (inputData iopts)
