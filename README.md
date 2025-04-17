@@ -141,7 +141,7 @@ After the keys are generated, it is time to exchange the certificates
   coordinator
 - The coordinator sends their **certificate** in file `client-cert.pem` to all
   data hosts.
-- Remember that **NO ONE SENDS ANY PRIVATE KEYS.** 
+- Remember that **NO ONE SENDS ANY PRIVATE KEYS.**
 
 Notably, the transfer of certificates does not need to be encrypted (ownership
 of an existing certificate does not give any advantage to a potential
@@ -173,7 +173,7 @@ the `remotesom server` is expected to run.
 ```sh
 ssh -N -R 21012:127.0.0.1:21012 myusername@myhpc-access.example.org
 ```
-Refer to documentation of `ssh` for details. 
+Refer to documentation of `ssh` for details.
 
 ### Start data host servers (on data hosts)
 
