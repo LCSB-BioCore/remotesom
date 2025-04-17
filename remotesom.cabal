@@ -30,8 +30,10 @@ library
   build-depends:
     , accelerate
     , accelerate-llvm-native
+    , accelerate-io
     , aeson
     , base
+    , mmap
     , storablevector
 
   hs-source-dirs:   .

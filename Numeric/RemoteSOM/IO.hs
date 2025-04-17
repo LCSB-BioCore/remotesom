@@ -26,14 +26,18 @@ import Control.Exception
 import qualified Data.Aeson as J
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
+import qualified Data.Array.Accelerate.Array.Data as A
+import Data.Array.Accelerate.IO.Foreign.Ptr
 import qualified Data.Array.Accelerate.Representation.Shape as RS
 import qualified Data.Array.Accelerate.Sugar.Elt as AE
 import qualified Data.Array.Accelerate.Sugar.Shape as AS
 import Data.List (intercalate)
 import qualified Data.StorableVector as SV
-import Foreign.Storable (Storable)
+import Foreign.Ptr (Ptr, castPtr)
+import Foreign.Storable (Storable, sizeOf)
 import GHC.Generics
 import System.IO
+import System.IO.MMap
 
 shapeSize' ::
      forall sh. A.Shape sh
@@ -52,6 +56,21 @@ writeArrayStorable ::
 writeArrayStorable a fp = do
   bracket (openFile fp WriteMode) hClose $ \h ->
     SV.hPut h . SV.pack $ A.toList a
+
+withMmapArray ::
+     forall sh a r.
+     ( A.Shape sh
+     , Storable a
+     , A.Elt a
+     , A.GArrayDataR Ptr (AE.EltR a) ~ Ptr a
+     )
+  => sh
+  -> FilePath
+  -> (A.Array sh a -> IO r)
+  -> IO r
+withMmapArray sh fp a =
+  mmapWithFilePtr fp ReadOnly (Just (0, shapeSize' sh * sizeOf @a undefined))
+    $ a . fromPtrs sh . castPtr . fst
 
 readArrayTSV ::
      (A.Shape sh, Read a, A.Elt a) => sh -> FilePath -> IO (A.Array sh a)

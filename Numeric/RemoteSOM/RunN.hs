@@ -1,4 +1,3 @@
-
 module Numeric.RemoteSOM.RunN where
 
 import Numeric.RemoteSOM

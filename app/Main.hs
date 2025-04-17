@@ -45,10 +45,9 @@ decodeFile file = do
     Left err -> error $ "error loading " ++ file ++ ": " ++ err
     Right x' -> pure x'
 
--- TODO mmap instead: https://hackage.haskell.org/package/accelerate-io-1.3.0.0/docs/Data-Array-Accelerate-IO-Foreign-ForeignPtr.html
-readPoints :: InputOpts -> Int -> IO (A.Matrix Float)
-readPoints iopts dim =
-  readArrayStorable (Z :. inputPoints iopts :. dim) (inputData iopts)
+withMmapPoints :: InputOpts -> Int -> (A.Matrix Float -> IO a) -> IO a
+withMmapPoints iopts dim =
+  withMmapArray (Z :. inputPoints iopts :. dim) (inputData iopts)
 
 withJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
 withJust (Just x) m = m x
@@ -79,37 +78,38 @@ run (GenCmd opts so to) = do
 run (TrainCmd opts iopts) = do
   (som0, topo) <- trainStartSOM opts
   let (Z :. _ :. dim) = A.arrayShape som0
-  points <- readPoints iopts dim
-  let som =
-        foldl
-          (\s sigma -> somIterLL points topo s (scalar sigma))
-          som0
-          (trainSigmas opts)
-  J.encodeFile (trainSomOut opts) (matrixArray som)
+  withMmapPoints iopts dim $ \points ->
+    let som =
+          foldl
+            (\s sigma -> somIterLL points topo s (scalar sigma))
+            som0
+            (trainSigmas opts)
+     in J.encodeFile (trainSomOut opts) (matrixArray som)
 -- local statistics output
 run (StatsCmd opts iopts) = do
   som <- arrayMatrix <$> decodeFile (statsSomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
-  points <- readPoints iopts dim
-  let (sums, sqsums, counts) = somSumSqsumCountsLL points som
-  outputSSCStats opts sums sqsums counts
-  withJust (statsMedians opts) $ \mo -> do
-    let (lb, ub) = mediansBounds mo
-        bs0 = somMedianInitLL (scalar lb) (scalar ub) som
-        cs = somClosestLL points som
-        step bs =
-          let med = somMedianMedLL bs
-              ltcs = somLtCountsLL points cs med
-           in somMedianCountStepLL ltcs counts med bs
-    J.encodeFile (mediansOut mo) . matrixArray . somMedianMedLL
-      $ iterateN step (mediansIters mo) bs0
+  withMmapPoints iopts dim $ \points -> do
+    let (sums, sqsums, counts) = somSumSqsumCountsLL points som
+    outputSSCStats opts sums sqsums counts
+    withJust (statsMedians opts) $ \mo -> do
+      let (lb, ub) = mediansBounds mo
+          bs0 = somMedianInitLL (scalar lb) (scalar ub) som
+          cs = somClosestLL points som
+          step bs =
+            let med = somMedianMedLL bs
+                ltcs = somLtCountsLL points cs med
+             in somMedianCountStepLL ltcs counts med bs
+      J.encodeFile (mediansOut mo) . matrixArray . somMedianMedLL
+        $ iterateN step (mediansIters mo) bs0
 -- manual training summary step
 run (SummaryCmd opts iopts) = do
   som <- arrayMatrix <$> decodeFile (summarySomIn opts)
   let (Z :. _ :. dim) = A.arrayShape som
-  points <- readPoints iopts dim
-  J.encodeFile (summaryOut opts) . uncurry summaryArray
-    $ somSumCountsLL points som
+  withMmapPoints iopts dim
+    $ J.encodeFile (summaryOut opts)
+        . uncurry summaryArray
+        . flip somSumCountsLL som
 -- manual training aggregation step
 run (AggregateCmd opts) = do
   (sumss, countss) <-
@@ -126,31 +126,31 @@ run (AggregateCmd opts) = do
           $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
   J.encodeFile (aggregateSomOut opts) som
 -- run a server
-run (ServerCmd sopts iopts dim) = do
-  points <- readPoints iopts dim
-  interactServer sopts $ \q ->
-    case either error id $ J.eitherDecode q of
-      QueryDataSummary som' -> do
-        let som = arrayMatrix som'
-            (Z :. _ :. dim') = A.arrayShape som
-        unless (dim == dim') $ error "som dimensions do not match"
-        pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
-      QueryStats som' -> do
-        let som = arrayMatrix som'
-            (Z :. _ :. dim') = A.arrayShape som
-        unless (dim == dim') $ error "som dimensions do not match"
-        pure . J.encode . uncurry3 statsSummaryArray
-          $ somSumSqsumCountsLL points som
-      QueryLessThan som' med' -> do
-        let som = arrayMatrix som'
-            med = arrayMatrix med'
-            sh@(Z :. nsom :. dim') = A.arrayShape som
-        unless (sh == A.arrayShape med && dim == dim')
-          $ error "sizes do not match"
-        let cs = somClosestLL points som
-            counts = somCountsLL (scalar nsom) cs
-            ltcs = somLtCountsLL points cs med
-        pure . J.encode $ ltCsArray ltcs counts
+run (ServerCmd sopts iopts dim) =
+  withMmapPoints iopts dim $ \points ->
+    interactServer sopts $ \q ->
+      case either error id $ J.eitherDecode q of
+        QueryDataSummary som' -> do
+          let som = arrayMatrix som'
+              (Z :. _ :. dim') = A.arrayShape som
+          unless (dim == dim') $ error "som dimensions do not match"
+          pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
+        QueryStats som' -> do
+          let som = arrayMatrix som'
+              (Z :. _ :. dim') = A.arrayShape som
+          unless (dim == dim') $ error "som dimensions do not match"
+          pure . J.encode . uncurry3 statsSummaryArray
+            $ somSumSqsumCountsLL points som
+        QueryLessThan som' med' -> do
+          let som = arrayMatrix som'
+              med = arrayMatrix med'
+              sh@(Z :. nsom :. dim') = A.arrayShape som
+          unless (sh == A.arrayShape med && dim == dim')
+            $ error "sizes do not match"
+          let cs = somClosestLL points som
+              counts = somCountsLL (scalar nsom) cs
+              ltcs = somLtCountsLL points cs med
+          pure . J.encode $ ltCsArray ltcs counts
 -- run the training client
 run (ClientTrainCmd servers copts opts) = do
   unless (not $ null servers) $ error "no servers to connect to"
