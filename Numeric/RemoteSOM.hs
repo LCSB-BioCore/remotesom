@@ -54,21 +54,41 @@ arraySum = A.zipWith (+)
 
 {-
  - Basic neighborhood-exploring operations
+ -
+ - somClosest, seqArgMin and seqSum was kindly provided by Tom Smeding (thanks!)
  -}
 somClosest ::
      A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
 somClosest points som =
-  A.zipWith (-) expts exsom
-    & A.map (\x -> x * x)
-    & A.sum
-    & A.imap (\ix v -> A.lift (v, A.indexHead ix))
-    & A.minimum
-    & A.map A.snd
-  where
-    (A.I2 pts _) = A.shape points
-    (A.I2 somn _) = A.shape som
-    expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
-    exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
+  let A.I2 pts n = A.shape points
+      A.I2 somn _ = A.shape som
+   in A.generate (A.I1 pts) $ \(A.I1 pts_i) ->
+        seqArgMin somn $ \som_i ->
+          seqSum n $ \i ->
+            (points A.! A.I2 pts_i i - som A.! A.I2 som_i i) ^ (2 :: Int)
+
+-- assumes n > 0
+seqArgMin :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
+seqArgMin n f =
+  let A.T3 _ res _ =
+        A.while
+          (\(A.T3 i _ _) -> i A.< n)
+          (\(A.T3 i mini minv) ->
+             let v' = f i
+              in A.cond
+                   (v' A.< minv)
+                   (A.T3 (i + 1) i v')
+                   (A.T3 (i + 1) mini minv))
+          (A.T3 1 0 (f 0))
+   in res
+
+seqSum :: A.Num a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp a
+seqSum n f =
+  A.snd
+    $ A.while
+        ((A.< n) . A.fst)
+        (\(A.T2 i s) -> A.T2 (i + 1) (s + f i))
+        (A.T2 0 0)
 
 somSumCounts ::
      A.Acc (A.Matrix Float)
