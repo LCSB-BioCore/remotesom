@@ -258,7 +258,7 @@ below may help you load and visualize the SOMs, potentially plugging the data
 into other available packages.
 
 Similar code can be used to examine the exported statistic (means, counts and
-medians) from `remotesom stats`.
+medians) from `remotesom stats` and `remotesom stats-client`.
 
 ##### R
 ```r
