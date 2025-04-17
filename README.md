@@ -22,7 +22,7 @@ batch:
 - Each data host compute local "sums" and "counts" of their data points,
   grouped by the nearest-neighboring SOM node,
 - the coordinator gathers all these summaries, applies the neighborhood
-  function, updtates the SOM, and repeats as needed with smaller neighborhood
+  function, updates the SOM, and repeats as needed with smaller neighborhood
   functions.
 
 #### Acknowledgements
@@ -41,7 +41,7 @@ In summary, you need to:
 2. prepare data on hosts, in a good binary format
 3. generate cryptographic keys used for authentication
 4. set up the network connections and start the data-host servers
-5. lauch the coordinator client for training
+5. launch the coordinator client for training
 
 ### Installation
 
@@ -218,7 +218,7 @@ If everything runs well, the trained 10×10 SOM will appear in `som.json`.
 mainly mean and median values and datapoint count in centroid-defined clusters.
 
 To generate all available cluster statistics from local data, run the following
-comand:
+command:
 
 ```sh
 remotesom stats \
@@ -372,7 +372,7 @@ writeBin(as.vector(t(myMatrix)), "mydata1.bin", size=4)
 # ...prepare another part of the data into myMatrix...
 writeBin(as.vector(t(myMatrix)), "mydata2.bin", size=4)
 ```
-...and concatenate them via commandline into one big data blob:
+...and concatenate them via command line into one big data blob:
 ```sh
 cat mydata1.bin mydata2.bin > mydata.bin
 ```
