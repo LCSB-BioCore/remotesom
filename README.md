@@ -195,11 +195,11 @@ Once data hosts are ready, the coordinator runs several epochs of SOM training:
 remotesom train-client \
   -x 10 -y 10 -d "<DIMENSION D>" \
   -T out-topology.json -o out-som.json \
-  -s 10 -s 9 -s 8 -s 7 -s 6 -s 5 -s 4 -s 3 -s 2 -s 1 -s 0.5 \
+  -s 10 -s 9 -s 8 -s 7 -s 6 -s 5 -s 4 -s 3 -s 2 -s 1 -s 0.5 \ # add more training epochs as needed
   -c client-cert.pem -k client-key.pem \
   connect datahost.uni1.example.org -a server-cert1.pem \
   connect hpc.uni2.example.org -a server-cert2.pem \
-  ...
+  ... # more data host connections
 ```
 (The coordinator must fill in the data dimension D, and server certificates and
 hostnames (and possibly other parameters) of all data hosts. See `remotesom
@@ -207,12 +207,58 @@ train-client connect --help` for all connection&security parameters.)
 
 If everything runs well, the trained 10×10 SOM will appear in `som.json`.
 
+### Compute per-cluster statistics (locally, on data nodes)
+
+`remotesom stats` allows you to compute various statistics of the local data,
+mainly mean and median values and datapoint count in centroid-defined clusters.
+
+To generate all available cluster statistics from local data, run the following
+comand:
+
+```sh
+remotesom stats \
+  -i out-test-som.json \
+  -D mydata.bin -n "<DATA SIZE N>" \
+  --out-means means.json \
+  --out-variances variances.json \
+  --out-counts counts.json \
+  --out-medians medians.json --median-min -1000 --median-max 1000 --median-iters 20
+```
+
+(The medians are computed by the interval-halving approximation algorithm, the
+computation thus needs to know the initial interval and the iteration limit.)
+
+### Compute per-cluster statistics remotely (on coordinator)
+
+`remotesom stats-client` works exactly like `remotesom stats` but computes the
+statistics from data stored on remote data nodes. (I.e., command `stats-client`
+is to `stats` as `train-client` is to `train`.)
+
+To compute the statistics with the SOM trained on the coordinator as above,
+using the same data on remote data hosts, you can run the command as follows:
+
+```sh
+remotesom stats-client \
+  -i out-test-som.json \
+  --out-means means.json \
+  --out-variances variances.json \
+  --out-counts counts.json \
+  --out-medians medians.json --median-min -1000 --median-max 1000 --median-iters 20 \
+  -c client-cert.pem -k client-key.pem \
+  connect datahost.uni1.example.org -a server-cert1.pem \
+  connect hpc.uni2.example.org -a server-cert2.pem \
+  ... # more data host connections
+```
+
 ### Examine the results
 
 `remotesom` does not provide any way to interpret or visualize the trained
 SOMs; you need another data analysis environment to do that. The code examples
 below may help you load and visualize the SOMs, potentially plugging the data
-into other available packages:
+into other available packages.
+
+Similar code can be used to examine the exported statistic (means, counts and
+medians) from `remotesom stats`.
 
 ##### R
 ```r
