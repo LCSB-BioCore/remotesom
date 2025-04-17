@@ -45,6 +45,9 @@ gemm l r =
 epsilon :: Float
 epsilon = 1e-7
 
+infinity :: Float
+infinity = 1/0
+
 dodgeZero ::
      (A.Shape sh) => A.Acc (A.Array sh Float) -> A.Acc (A.Array sh Float)
 dodgeZero x = A.zipWith A.max (A.shape x `A.fill` A.constant epsilon) x
@@ -78,12 +81,25 @@ instance (A.Eq v, A.Ord v, A.Elt i) => A.Ord (Arg v i) where
  -}
 somClosest ::
      A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
+{- THIS WAS AN ATTEMPT.
+somClosest points som =
+  A.generate (A.I1 pts) $ \(A.I1 pix) ->
+    let p = points `A.slice` (A.lift $ Z:. pix :. A.All)
+     in argIdx $ A.sfoldl min (A.constant $ Arg infinity 0) (A.I0)
+          $ A.generate (A.I1 somn)
+          $ \(A.I1 somi) ->
+              let s = som `A.slice` (A.lift $ Z:. somi:. A.All)
+               in A.zipWith (-) p s
+                    & A.map (\x -> x*x) & A.sfoldl (+) 0 A.I0 & flip Arg_ somi
+  where
+    (A.I2 pts _) = A.shape points
+    (A.I2 somn _) = A.shape som-}
 somClosest points som =
   A.zipWith (-) expts exsom
     & A.map (\x -> x * x)
-    & A.sum
+    & A.sum -- TODO: this is a fold that doesn't fuse
     & A.imap (\ix v -> Arg_ v $ A.indexHead ix)
-    & A.minimum
+    & A.fold1 min
     & A.map argIdx
   where
     (A.I2 pts _) = A.shape points
