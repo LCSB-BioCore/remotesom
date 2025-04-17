@@ -341,7 +341,7 @@ size is K nodes (typically, K=`som-x`×`som-y`), you need to fit (K²+K×D)×4
 bytes into the memory. On a modest computer with 16GB of memory, this thus
 allows you to train a SOM of around 65 thousand centroids, which is a grid of
 roughly 250×250 centroids. Typically, practical SOM grid sizes never exceed
-100×100, and in for most cases 32×32 is more than sufficient.
+100×100, and in most cases 32×32 is more than sufficient.
 
 ##### Data preparation limits
 
