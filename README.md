@@ -215,7 +215,7 @@ Given the same architecture, same data on data hosts, same order of data-host
 connections and same initial training SOM, the training is mathematically
 reproducible, and should not be a subject to floating-point robustness errors.
 
-To get a fixed initial SOM instead of a random one,  use parameter `-R` to the
+To get a fixed initial SOM instead of a random one, use parameter `-R` to the
 generating&training commands.
 
 Please open an issue if you detect any reproducibility issues caused by
@@ -223,13 +223,30 @@ floating-point robustness&rounding errors.
 
 #### How much data can be processed at once?
 
-In the current implementation, each data host has to load the input binary data
-into memory; which puts a practical limit of several gigabytes per data host.
-In general, you should have more memory than N×D×4 bytes. If you run out of
-memory, you can split the dataset into several data hosts without any impact on
-the result. In turn, this enables horizontal scalability --- the amount of data
-processed at once is only limited by the amount of computers you can attach to
-the analysis.
+##### Data size limits
+
+In the current implementation, the data hosts do not load the input binary data
+into memory, instead they use [mmap](https://linux.die.net/man/2/mmap) to map
+the data of essentially any size without a direct RAM requirement. There are 2
+limitations that are still present:
+
+- In general, the data size is N×D×4 bytes. If you have less memory than that,
+  the system won't be able to cache the whole file, and will thus have to
+  periodically reload parts of it from the storage. In turn, the processing may
+  get noticeably slower, but not impossible.
+- Some parts of the algorithms still need to materialize data-size-dependent
+  arrays, most notably the array of "SOM centroid indexes that are closest to
+  all points" is cached in the median computation to save computation time.
+  This array requires (on `x86_64`) N×8 bytes. Still, with commonly available
+  16GB of memory, you can still process a hefty dataset of around 2,000,000,000
+  data points on a single host.
+
+If you run out of memory because of the data size, you can split the dataset
+into several data hosts without any impact on the result. In turn, this enables
+horizontal scalability --- the speed & amount of data processed at once is only
+limited by the amount of computers you can attach to the analysis.
+
+##### SOM size limits
 
 The training coordinator node has to keep the SOM topology in the memory.
 Because we store a "generic" all-to-all distance topology file, this puts a
@@ -239,6 +256,26 @@ bytes into the memory. On a modest computer with 16GB of memory, this thus
 allows you to train a SOM of around 65 thousand centroids, which is a grid of
 roughly 250×250 centroids. Typically, practical SOM grid sizes never exceed
 100×100, and in for most cases 32×32 is more than sufficient.
+
+##### Data preparation limits
+
+It is often the case that numeric computing environments can not manipulate
+huge matrices, because they run out of memory. (Unless handled specially, this
+is common to Julia, R, Numpy, and many others.)
+
+In such case, you can export many "parts" of the dataset independently, e.g.
+like this in R:
+```r
+# ...prepare first part of data to myMatrix...
+writeBin(as.vector(t(myMatrix)), "mydata1.bin", size=4)
+# ...prepare another part of the data into myMatrix...
+writeBin(as.vector(t(myMatrix)), "mydata2.bin", size=4)
+```
+...and concatenate them via commandline into one big data blob:
+```sh
+cat mydata1.bin mydata2.bin > mydata.bin
+```
+(Similar method can be applied in all languages.)
 
 #### Can I use a different SOM topology?
 
