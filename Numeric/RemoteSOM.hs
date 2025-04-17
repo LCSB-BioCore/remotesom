@@ -60,12 +60,12 @@ arraySum = A.zipWith (+)
 somClosest ::
      A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
 somClosest points som =
-  let A.I2 pts n = A.shape points
+  let A.I2 pts dim = A.shape points
       A.I2 somn _ = A.shape som
-   in A.generate (A.I1 pts) $ \(A.I1 pts_i) ->
-        seqArgMin somn $ \som_i ->
-          seqSum n $ \i ->
-            (points A.! A.I2 pts_i i - som A.! A.I2 som_i i) ^ (2 :: Int)
+   in A.generate (A.I1 pts) $ \(A.I1 pix) ->
+        seqArgMin somn $ \somi ->
+          seqSum dim $ \dimi ->
+            (points A.! A.I2 pix dimi - som A.! A.I2 somi dimi) ^ (2 :: Int)
 
 -- assumes n > 0
 seqArgMin :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
