@@ -148,8 +148,8 @@ run (ServerCmd sopts iopts dim) =
           unless (sh == A.arrayShape med && dim == dim')
             $ error "sizes do not match"
           let cs = somClosestLL points som
-              counts = somCountsLL (scalar nsom) cs
               ltcs = somLtCountsLL points cs med
+              counts = somCountsLL (scalar nsom) cs
           pure . J.encode $ ltCsArray ltcs counts
 -- run the training client
 run (ClientTrainCmd servers copts opts) = do

@@ -179,8 +179,7 @@ somLtCounts points closest thresholds =
         (A.I2 somn dim `A.fill` A.constant (0 :: Int))
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
   where
-    (A.I1 somn) = A.shape closest
-    (A.I2 _ dim) = A.shape points
+    (A.I2 somn dim) = A.shape thresholds
 
 somCounts ::
      A.Acc (A.Scalar Int) -> A.Acc (A.Vector Int) -> A.Acc (A.Vector Int)
