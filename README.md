@@ -207,6 +207,46 @@ train-client connect --help` for all connection&security parameters.)
 
 If everything runs well, the trained 10×10 SOM will appear in `som.json`.
 
+### Examine the results
+
+`remotesom` does not provide any way to interpret or visualize the trained
+SOMs; you need another data analysis environment to do that. The code examples
+below may help you load and visualize the SOMs, potentially plugging the data
+into other available packages:
+
+##### R
+```r
+library(rjson)
+
+# change the constants based on your data:
+som_file <- "out-som.json"
+x <- 10
+y <- 10
+dim <- 5
+
+som <- array(do.call(cbind, fromJSON(file = som_file)), c(dim, x, y))
+
+for(d in 1:dim)
+  heatmap(som[d,,], Colv = NA, Rowv = NA)
+```
+
+##### Julia
+```julia
+using JSON, UnicodePlots
+
+# change the constants based on your data:
+som_file = "out-som.json"
+x = 10
+y = 10
+dim = 5
+
+som = reshape(hcat(JSON.parsefile(som_file)...), (dim,x,y))
+
+for d in 1:dim
+    heatmap(som[d,:,:])
+end
+```
+
 # FAQ
 
 #### Is the training reproducible?
