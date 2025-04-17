@@ -16,12 +16,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Numeric.RemoteSOM where
 
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Function ((&))
+import GHC.Generics
 
 {-
  - Helper functions
@@ -52,6 +57,22 @@ arraySum ::
   -> A.Acc (A.Array sh a)
 arraySum = A.zipWith (+)
 
+-- custom Arg type that ignores the index and Accelerates well
+data Arg v i = Arg
+  { argVal_ :: v
+  , argIdx_ :: i
+  } deriving (Show, Generic)
+
+$(A.mkPattern ''Arg)
+
+instance (A.Elt v, A.Elt i) => A.Elt (Arg v i)
+
+instance (A.Eq v, A.Elt i) => A.Eq (Arg v i) where
+  a == b = argVal a A.== argVal b
+
+instance (A.Eq v, A.Ord v, A.Elt i) => A.Ord (Arg v i) where
+  compare a b = argVal a `A.compare` argVal b
+
 {-
  - Basic neighborhood-exploring operations
  -}
@@ -61,9 +82,9 @@ somClosest points som =
   A.zipWith (-) expts exsom
     & A.map (\x -> x * x)
     & A.sum
-    & A.imap (\ix v -> A.lift (v, A.indexHead ix))
+    & A.imap (\ix v -> Arg_ v $ A.indexHead ix)
     & A.minimum
-    & A.map A.snd
+    & A.map argIdx
   where
     (A.I2 pts _) = A.shape points
     (A.I2 somn _) = A.shape som
