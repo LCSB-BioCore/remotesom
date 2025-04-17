@@ -1,16 +1,16 @@
 
 # `remotesom` -- Federated self-organizing maps
 
-`remotesom` runs batch training of [Kohonen's self-organizing maps
+`remotesom` enables federated batch training of [Kohonen's self-organizing maps
 (SOMs)](https://en.wikipedia.org/wiki/Self-organizing_map) on data points
 scattered over the network / internet, using authenticated&encrypted TLS
-communication. This allows you to create overview maps and clusterings (and
-many other things) of datasets even if the data can not be moved to a single
-location (for practical or legal reasons).
+communication. This allows you to create overview SOM-based maps and clusterings (and
+many other things) of datasets without centralizing the data, ideal when data transfer
+is impractical or legally restricted.
 
 In essence, the training is split as follows:
 
-- There are several nodes that host the data; these compute "summary" training
+- There are several nodes that host the data; these hosts compute local "summary" training
   commitments with respect to some given version of the SOM,
 - an extra coordinator node maintains the "current" version of the SOM, and
   connects to the data hosts to gathers commitments used to iteratively train
@@ -19,11 +19,11 @@ In essence, the training is split as follows:
 The SOM training proceeds as usual in the split-batch mode, where for each
 batch:
 
-- The data hosts compute "sums" and "counts" of their data points, grouped by
+- Each data host compute local "sums" and "counts" of their data points, grouped by
   the nearest-neighboring SOM node,
-- the coordinator gathers all such commitments, applies the neighborhood
-  function, and continues with more iterations (and smaller neighborhood
-  functions) as needed.
+- the coordinator gathers all these summaries, applies the neighborhood
+  function, updtates the SOM, and repeats as needed with smaller neighborhood
+  functions.
 
 #### Acknowledgements
 
@@ -39,9 +39,9 @@ In summary, you need to:
 
 1. install `remotesom` on all hosts
 2. prepare data on hosts, in a good binary format
-3. prepare cryptographic keys used for authentication
-4. prepare the network connections and start the data-host servers
-5. run the coordinator client
+3. generate cryptographic keys used for authentication
+4. set up the network connections and start the data-host servers
+5. Lauch the coordinator client for training
 
 ### Installation
 
@@ -69,7 +69,7 @@ accelerate-llvm](https://github.com/AccelerateHS/accelerate-llvm/blob/master/REA
 For SOMs, you usually take a dataset of N data points represented by
 D-dimensional feature vectors.
 
-To feed this data to `remotesom`, you need to format it as an array of D×N raw
+To feed this data to `remotesom`, you need to format it as an array of D×N array of raw
 32-bit `float`s. The data must be "row major", i.e., the data should form
 groups of D `float`s each representing one of the N data points.
 
@@ -88,8 +88,12 @@ open("mydata.bin", "w") do f
 end
 ```
 
-With numpy, you can equivalently use
+With Pyhton (NumPy), you can equivalently use
 [`ndarray.tofile`](https://numpy.org/devdocs/reference/generated/numpy.ndarray.tofile.html).
+```python
+my_matrix.T.astype(np.float32).tofile("mydata.bin")
+```
+
 
 ### Test the training locally (on data hosts)
 
@@ -107,10 +111,10 @@ remotesom train \
 
 This will output the trained SOM in `out-test-som.json`. The JSON file will
 contain an array of arrays of numbers; each of the arrays represents one
-feature vector that corresponds to one SOM centroid. The SOM topology is output
-in `out-test-topoology.json` as squared distances of the SOM nodes in the map
-space (i.e., *not* the centroids in data space), the JSON contains array of
-arrays of numbers which form columns of all-to-all distance matrix.
+feature vector that corresponds to one SOM centroid. The SOM topology is saved
+in `out-test-topoology.json` as a matrix of squared distances of the SOM nodes in the map
+space (i.e., *not* centroids in data space), the JSON contains an array of
+arrays of numbers, forming the columns of the all-to-all distance matrix.
 
 It is advisable for all data hosts to locally verify that their data is in a
 good shape to train at least a local SOM before starting the federated
@@ -297,12 +301,16 @@ end
 
 #### Is the training reproducible?
 
-Given the same architecture, same data on data hosts, same order of data-host
-connections and same initial training SOM, the training is mathematically
+Given the same architecture, the same data on data hosts, the same order of data-host
+connections and the same initial training SOM, the training is mathematically
 reproducible, and should not be a subject to floating-point robustness errors.
 
-To get a fixed initial SOM instead of a random one, use parameter `-R` to the
-generating&training commands.
+To get a fixed initial SOM instead of a random one, include the `-R` parameter in both
+the generating&training commands.
+ ```sh
+remotesom generate -R ...
+remotesom train-client -R ...
+```
 
 Please open an issue if you detect any reproducibility issues caused by
 floating-point robustness&rounding errors.
@@ -316,15 +324,16 @@ into memory, instead they use [mmap](https://linux.die.net/man/2/mmap) to map
 the data of essentially any size without a direct RAM requirement. There are 2
 limitations that are still present:
 
-- In general, the data size is N×D×4 bytes. If you have less memory than that,
-  the system won't be able to cache the whole file, and will thus have to
+- **File size**: In general, the data size is N×D×4 bytes (where `N` is the number of points,
+  `D` the dimensionality, and `4` the bytes per float). If your system have less RAM
+  than that, the system won't be able to cache the whole file, and will thus have to
   periodically reload parts of it from the storage. In turn, the processing may
   get noticeably slower, but not impossible.
-- Some parts of the algorithms still need to materialize data-size-dependent
+- **Index cache**: Some parts of the algorithms still need to materialize data-size-dependent
   arrays, most notably the array of "SOM centroid indexes that are closest to
   all points" is cached in the median computation to save computation time.
   This array requires (on `x86_64`) N×8 bytes. Still, with commonly available
-  16GB of memory, you can still process a hefty dataset of around 2,000,000,000
+  16GB of memory, you can still process a hefty dataset of around 2 billion
   data points on a single host.
 
 If you run out of memory because of the data size, you can split the dataset
@@ -334,20 +343,21 @@ limited by the amount of computers you can attach to the analysis.
 
 ##### SOM size limits
 
-The training coordinator node has to keep the SOM topology in the memory.
+The training coordinator node has to keep the full SOM topology in the memory.
 Because we store a "generic" all-to-all distance topology file, this puts a
 limit on the size of the self-organizing map that you can train. If the SOM
 size is K nodes (typically, K=`som-x`×`som-y`), you need to fit (K²+K×D)×4
 bytes into the memory. On a modest computer with 16GB of memory, this thus
 allows you to train a SOM of around 65 thousand centroids, which is a grid of
 roughly 250×250 centroids. Typically, practical SOM grid sizes never exceed
-100×100, and in most cases 32×32 is more than sufficient.
+100×100 (10 000 centroids), and in for most cases 32×32 (1 024 centroids) 
+is more than sufficient.
 
 ##### Data preparation limits
 
 It is often the case that numeric computing environments can not manipulate
 huge matrices, because they run out of memory. (Unless handled specially, this
-is common to Julia, R, Numpy, and many others.)
+is common to Julia, R, NumPy, and many others.)
 
 In such case, you can export many "parts" of the dataset independently, e.g.
 like this in R:
@@ -396,11 +406,11 @@ commands:
 Steps 2 and 3 are executed multiple times (each runs a single "epoch" of SOM
 training with a different neighborhood function).
 
-#### Can I use this to run usual clustering?
+#### Can I use this to run usual k-means clustering?
 
-Using a zero sigma degenerates the SOM batch-training epoch into a K-means
+Yes. Using a zero sigma degenerates the SOM batch-training epoch into a K-means
 batch-training epoch. With options like `-s 0 -s 0 -s 0 ...` you thus
 essentially run K-means clustering.
 
-Note that K-means clustering requires careful initialization (different than
-what `remotesom generate` provides).
+Note that K-means clustering requires careful initialization, which differs from
+the random or grid-based initialization used by`remotesom generate`.
