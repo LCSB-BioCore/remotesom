@@ -63,13 +63,13 @@ somClosest points som =
   let A.I2 pts dim = A.shape points
       A.I2 somn _ = A.shape som
    in A.generate (A.I1 pts) $ \(A.I1 pix) ->
-        seqArgMin somn $ \somi ->
+        seqArgMin1 somn $ \somi ->
           seqSum dim $ \dimi ->
             (points A.! A.I2 pix dimi - som A.! A.I2 somi dimi) ^ (2 :: Int)
 
 -- assumes n > 0
-seqArgMin :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
-seqArgMin n f =
+seqArgMin1 :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
+seqArgMin1 n f =
   let A.T3 _ res _ =
         A.while
           (\(A.T3 i _ _) -> i A.< n)
