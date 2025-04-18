@@ -67,7 +67,7 @@ somClosest points som =
           seqSum dim $ \dimi ->
             (points A.! A.I2 pix dimi - som A.! A.I2 somi dimi) ^ (2 :: Int)
 
--- assumes n > 0
+-- assumes n >= 1
 seqArgMin1 :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
 seqArgMin1 n f =
   let A.T3 _ res _ =
