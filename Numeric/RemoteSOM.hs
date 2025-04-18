@@ -54,58 +54,103 @@ arraySum = A.zipWith (+)
 
 {-
  - Basic neighborhood-exploring operations
+ -
+ - somClosest, seqArgMin and seqSum was kindly provided by Tom Smeding (thanks!)
  -}
 somClosest ::
      A.Acc (A.Matrix Float) -> A.Acc (A.Matrix Float) -> A.Acc (A.Vector Int)
 somClosest points som =
-  A.zipWith (-) expts exsom
-    & A.map (\x -> x * x)
-    & A.sum
-    & A.imap (\ix v -> A.lift (v, A.indexHead ix))
-    & A.minimum
-    & A.map A.snd
+  let A.I2 pts dim = A.shape points
+      A.I2 somn _ = A.shape som
+   in A.generate (A.I1 pts) $ \(A.I1 pix) ->
+        seqArgMin1 somn $ \somi ->
+          seqSum dim $ \dimi ->
+            (points A.! A.I2 pix dimi - som A.! A.I2 somi dimi) ^ (2 :: Int)
+
+-- assumes n >= 1
+seqArgMin1 :: A.Ord a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp Int
+seqArgMin1 n f =
+  let A.T3 _ res _ =
+        A.while
+          (\(A.T3 i _ _) -> i A.< n)
+          (\(A.T3 i mini minv) ->
+             let v' = f i
+              in A.cond
+                   (v' A.< minv)
+                   (A.T3 (i + 1) i v')
+                   (A.T3 (i + 1) mini minv))
+          (A.T3 1 0 (f 0))
+   in res
+
+seqSum :: A.Num a => A.Exp Int -> (A.Exp Int -> A.Exp a) -> A.Exp a
+seqSum n f =
+  A.snd
+    $ A.while
+        ((A.< n) . A.fst)
+        (\(A.T2 i s) -> A.T2 (i + 1) (s + f i))
+        (A.T2 0 0)
+
+somSums ::
+     A.Acc (A.Scalar Int)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float)
+somSums somn points closest =
+  A.permute
+    (+)
+    (A.I2 (A.the somn) dim `A.fill` A.constant 0)
+    (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
+    points
   where
-    (A.I2 pts _) = A.shape points
-    (A.I2 somn _) = A.shape som
-    expts = A.replicate (A.lift $ Z :. A.All :. somn :. A.All) points
-    exsom = A.replicate (A.lift $ Z :. pts :. A.All :. A.All) som
+    (A.I2 _ dim) = A.shape points
+
+somSqsums ::
+     A.Acc (A.Scalar Int)
+  -> A.Acc (A.Matrix Float)
+  -> A.Acc (A.Vector Int)
+  -> A.Acc (A.Matrix Float)
+somSqsums somn points closest =
+  A.permute
+    (+)
+    (A.I2 (A.the somn) dim `A.fill` A.constant 0)
+    (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
+    (A.map (\x -> x * x) points)
+  where
+    (A.I2 _ dim) = A.shape points
+
+somCounts ::
+     A.Acc (A.Scalar Int) -> A.Acc (A.Vector Int) -> A.Acc (A.Vector Int)
+somCounts somn closest =
+  A.permute
+    (+)
+    (A.I1 (A.the somn) `A.fill` A.constant 0)
+    (\ix -> A.Just_ $ A.I1 (closest A.! ix))
+    (A.shape closest `A.fill` A.constant 1)
 
 somSumCounts ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Vector Int)
-somSumCounts pts som =
-  A.lift (s :: A.Acc (A.Matrix Float), c :: A.Acc (A.Vector Int))
+somSumCounts points som =
+  A.lift (somSums somn points closest, somCounts somn closest)
   where
-    (s, (_ :: A.Acc (A.Matrix Float)), c) = A.unlift $ somSumSqsumCounts pts som
+    (A.I2 somn' _) = A.shape som
+    somn = A.unit somn'
+    closest = somClosest points som
 
 somSumSqsumCounts ::
      A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float)
   -> A.Acc (A.Matrix Float, A.Matrix Float, A.Vector Int)
-somSumSqsumCounts points som = A.lift (sums, sqsums, counts)
+somSumSqsumCounts points som =
+  A.lift
+    ( somSums somn points closest
+    , somSqsums somn points closest
+    , somCounts somn closest)
   where
-    (A.I2 pts _) = A.shape points
-    (A.I2 somn dim) = A.shape som
+    (A.I2 somn' _) = A.shape som
+    somn = A.unit somn'
     closest = somClosest points som
-    sums =
-      A.permute
-        (+)
-        (A.I2 somn dim `A.fill` A.constant (0 :: Float))
-        (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
-        points
-    sqsums =
-      A.permute
-        (+)
-        (A.I2 somn dim `A.fill` A.constant (0 :: Float))
-        (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
-        (A.map (\x -> x * x) points)
-    counts =
-      A.permute
-        (+)
-        (A.I1 somn `A.fill` A.constant (0 :: Int))
-        (\ix -> A.Just_ . A.I1 $ closest A.! ix)
-        (A.lift (Z :. pts) `A.fill` A.constant (1 :: Int))
 
 {-
  - Neighborhood function application
@@ -180,15 +225,6 @@ somLtCounts points closest thresholds =
         (\(A.I2 pix dimi) -> A.Just_ $ A.I2 (closest A.! A.I1 pix) dimi)
   where
     (A.I2 somn dim) = A.shape thresholds
-
-somCounts ::
-     A.Acc (A.Scalar Int) -> A.Acc (A.Vector Int) -> A.Acc (A.Vector Int)
-somCounts n closest =
-  A.permute
-    (+)
-    (A.I1 (A.the n) `A.fill` A.constant 0)
-    (\ix -> A.Just_ $ A.I1 (closest A.! ix))
-    (A.shape closest `A.fill` A.constant 1)
 
 somMedianInit ::
      A.Acc (A.Scalar Float)
