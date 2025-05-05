@@ -1,1 +1,4 @@
 packages: remotesom.cabal, accelerate/*.cabal, accelerate-llvm/accelerate-llvm/*.cabal, accelerate-llvm/accelerate-llvm-native/*.cabal, llvm-hs/*/*.cabal
+
+package remotesom
+  executable-static: True
