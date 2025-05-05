@@ -1,0 +1,40 @@
+
+name: build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: |
+          MYDIR="$PWD"
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.7/llvm-15.0.7.src.tar.xz
+          tar xJf llvm-15.0.7.src.tar.xz
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.0-rc1/cmake-15.0.0rc1.src.tar.xz
+          tar xJf cmake-15.0.0rc1.src.tar.xz
+          cp -v cmake-15.0.0rc1.src/Modules/* llvm-15.0.7.src/cmake/modules/
+          pushd llvm-15.0.7.src
+          mkdir -p "$MYDIR/llvm-install"
+          mkdir build; cd build
+          cmake .. -DCMAKE_INSTALL_PREFIX="$MYDIR/llvm-install" -DCMAKE_BUILD_TYPE=Release -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON -DLLVM_TARGETS_TO_BUILD='X86' -DLLVM_ENABLE_PROJECTS=''
+          cmake --build .
+          cmake --build . --target install
+          popd
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.4'
+      - run: |
+          export PATH="$PWD/llvm-install/bin/:$PATH"
+          cabal build
+          cp `cabal exec which remotesom` remotesom-${{ github.ref }}
+          xz -9 < remotesom-${{ github.ref }} > remotesom-${{ github.ref }}.xz
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: remotesom-${{ github.ref }}.xz
