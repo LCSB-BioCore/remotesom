@@ -32,7 +32,7 @@ jobs:
           ghc-version: '9.4'
       - run: |
           export PATH="$PWD/llvm-install/bin/:$PATH"
-          cabal build
+          cabal build --ghc-options=-v3
           cp `cabal exec which remotesom` remotesom-${{ github.ref }}
           xz -9 < remotesom-${{ github.ref }} > remotesom-${{ github.ref }}.xz
       - uses: softprops/action-gh-release@v2
