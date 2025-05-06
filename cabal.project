@@ -2,3 +2,4 @@ packages: remotesom.cabal, accelerate/*.cabal, accelerate-llvm/accelerate-llvm/*
 
 package remotesom
   executable-static: True
+  ghc-options: -optl -Wl,--no-as-needed
