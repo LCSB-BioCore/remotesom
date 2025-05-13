@@ -183,3 +183,8 @@ data Query f
   | QueryStats [[f]]
   | QueryLessThan [[f]] [[f]]
   deriving (Show, Generic, J.FromJSON, J.ToJSON)
+
+data Shape f = Shape
+  { projection :: [[f]]
+  , topology :: [[f]]
+  } deriving (Show, Generic, J.FromJSON, J.ToJSON)

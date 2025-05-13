@@ -71,9 +71,9 @@ iterateNM f n a = foldlM (const . f) a [1 .. n]
 run :: Cmd -> IO ()
 -- generate a new SOM
 run (GenCmd opts so to) = do
-  (s, t) <- runGen opts
+  (s, p, t) <- runGen opts
   J.encodeFile so $ matrixArray s
-  J.encodeFile to $ matrixArray t
+  J.encodeFile to $ Shape {projection = p, topology = matrixArray t}
 -- local training
 run (TrainCmd opts iopts) = do
   (som0, topo) <- trainStartSOM opts
@@ -228,23 +228,27 @@ trainStartSOM :: TrainOpts -> IO (A.Matrix Float, A.Matrix Float)
 trainStartSOM opts =
   case trainSomIn opts of
     Left (gopts, to) -> do
-      (sa, ta) <- runGen gopts
-      J.encodeFile to (matrixArray ta)
+      (sa, pa, ta) <- runGen gopts
+      J.encodeFile to $ Shape {projection = pa, topology = matrixArray ta}
       pure (sa, ta)
     Right (si, ti) -> do
       (,)
         <$> (arrayMatrix <$> decodeFile si)
-        <*> (arrayMatrix <$> decodeFile ti)
+        <*> (arrayMatrix . topology <$> decodeFile ti)
 
-runGen :: GenOpts -> IO (A.Matrix Float, A.Matrix Float)
+runGen :: GenOpts -> IO (A.Matrix Float, [[Float]], A.Matrix Float)
 runGen opts = do
   let somn = genX opts * genY opts
-      coords = (`divMod` genX opts)
+      coords = (`divMod` genY opts)
       somsqdist i j =
         let (a, b) = coords i
             (c, d) = coords j
          in (a - c) * (a - c) + (b - d) * (b - d)
-      topology =
+      proj =
+        map
+          ((\(a, b) -> [fromIntegral a, fromIntegral b]) . coords)
+          [0 .. somn - 1]
+      topo =
         A.fromFunction
           (Z :. somn :. somn)
           (\(Z :. i :. j) -> fromIntegral $ somsqdist i j)
@@ -255,7 +259,7 @@ runGen opts = do
       <$> case genSeed opts of
             Just s -> pure $ mkStdGen s
             Nothing -> initStdGen
-  pure (centroids, topology)
+  pure (centroids, proj, topo)
 
 outputSSCStats ::
      StatsOpts -> A.Matrix Float -> A.Matrix Float -> A.Vector Int -> IO ()
