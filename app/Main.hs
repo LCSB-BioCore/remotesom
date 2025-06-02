@@ -238,20 +238,8 @@ trainStartSOM opts =
 
 runGen :: GenOpts -> IO (A.Matrix Float, [[Float]], A.Matrix Float)
 runGen opts = do
-  let somn = genX opts * genY opts
-      coords = (`divMod` genY opts)
-      somsqdist i j =
-        let (a, b) = coords i
-            (c, d) = coords j
-         in (a - c) * (a - c) + (b - d) * (b - d)
-      proj =
-        map
-          ((\(a, b) -> [fromIntegral a, fromIntegral b]) . coords)
-          [0 .. somn - 1]
-      topo =
-        A.fromFunction
-          (Z :. somn :. somn)
-          (\(Z :. i :. j) -> fromIntegral $ somsqdist i j)
+  let (proj, topo) = genTopo (genShape opts)
+      (Z :. somn :. _) = A.arrayShape topo
   centroids <-
     A.fromList (Z :. somn :. genDim opts)
       . fst
@@ -270,3 +258,72 @@ outputSSCStats opts sums sqsums counts = do
     J.encodeFile o $ A.toList counts
   withJust (statsVariancesOut opts) $ \o -> do
     J.encodeFile o . matrixArray $ somVariancesLL sums sqsums counts
+
+{-
+ - Topology generators
+ -}
+anglesAround :: (Floating a2, Integral a1) => a1 -> [a2]
+anglesAround n = [2 * pi * fromIntegral i / fromIntegral n | i <- [0 .. pred n]]
+
+sqAngleDist :: Floating a => a -> a -> a
+sqAngleDist a b = 1 - sin a * sin b - cos a * cos b
+
+squared :: Num a => a -> a
+squared a = a * a
+
+rng :: (Integral a, Num b) => a -> [b]
+rng e = fromIntegral <$> [0 .. pred e]
+
+rng1 :: (Integral a, Num b) => a -> [b]
+rng1 e = fromIntegral <$> [1 .. pred e]
+
+genTopo :: SomShape -> ([[Float]], A.Matrix Float)
+genTopo (SomRectangle gx gy) = (proj, topo)
+  where
+    somn = gx * gy
+    coords = (`divMod` gy)
+    somsqdist i j =
+      let (a, b) = coords i
+          (c, d) = coords j
+       in squared (a - c) + squared (b - d)
+    proj =
+      map
+        ((\(a, b) -> [fromIntegral a, fromIntegral b]) . coords)
+        [0 .. somn - 1]
+    topo =
+      A.fromFunction
+        (Z :. somn :. somn)
+        (\(Z :. i :. j) -> fromIntegral $ somsqdist i j)
+genTopo (SomHex hx hy hz) = (proj, arrayMatrix sqdists)
+  where
+    off1 = 0.5
+    off2 = sqrt 3 / 2
+    proj =
+      [[x - off1 * y, off2 * y] | x <- rng hx, y <- rng hy]
+        ++ [[x - off1 * z, -off2 * z] | x <- rng hx, z <- rng1 hz]
+        ++ [[-off1 * (y + z), off2 * (y - z)] | y <- rng1 hy, z <- rng1 hz]
+    sqdists = [map (sum . map squared . zipWith (-) a0) proj | a0 <- proj]
+genTopo (SomTorus tx ty) = (proj, arrayMatrix sqdists)
+  where
+    proj = [[x, y] | x <- rng tx, y <- rng ty]
+    angles = [(a, b) | a <- anglesAround tx, b <- anglesAround ty]
+    sqdists = do
+      (a0, b0) <- angles
+      pure $ do
+        (a, b) <- angles
+        pure
+          $ fromIntegral tx * sqAngleDist a a0
+              + fromIntegral ty * sqAngleDist b b0
+genTopo (SomCircle clen cwid) = (proj, arrayMatrix sqdists)
+  where
+    anglepos =
+      [(a, fromIntegral x) | a <- anglesAround clen, x <- [0 .. pred cwid]]
+    proj = do
+      (a, x) <- anglepos
+      let r = x + fromIntegral clen / (2 * pi)
+      pure [cos a * r, sin a * r]
+    sqdists = do
+      (a0, x0) <- anglepos
+      pure $ do
+        (a, x) <- anglepos
+        pure $ fromIntegral clen * sqAngleDist a a0 + squared (x - x0)

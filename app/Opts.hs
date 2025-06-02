@@ -54,9 +54,72 @@ topoout =
         <> metavar "TOPOLOGY"
         <> help "write the SOM topology into this file"
 
+data SomShape
+  = SomRectangle Int Int
+  | SomHex Int Int Int
+  | SomTorus Int Int
+  | SomCircle Int Int
+  deriving (Show)
+
+somshape :: Parser SomShape
+somshape =
+  asum
+    [ SomRectangle
+        <$> (option auto
+               $ long "grid-x"
+                   <> short 'x'
+                   <> metavar "X"
+                   <> help "rectangular grid dimension 1"
+                   <> value 10
+                   <> showDefault)
+        <*> (option auto
+               $ long "grid-y"
+                   <> short 'y'
+                   <> metavar "Y"
+                   <> help "rectangular grid dimension 2"
+                   <> value 10
+                   <> showDefault)
+    , SomHex
+        <$> (option auto
+               $ long "hex-x"
+                   <> metavar "X"
+                   <> help "hexagonal grid dimension 1")
+        <*> (option auto
+               $ long "hex-y"
+                   <> metavar "Y"
+                   <> help "hexagonal grid dimension 2")
+        <*> (option auto
+               $ long "hex-z"
+                   <> metavar "Z"
+                   <> help "hexagonal grid dimension 3"
+                   <> value 1
+                   <> showDefault)
+    , SomTorus
+        <$> (option auto
+               $ long "torus-x"
+                   <> metavar "X"
+                   <> help "toroidal grid dimension 1")
+        <*> (option auto
+               $ long "torus-y"
+                   <> metavar "Y"
+                   <> help "toroidal grid dimension 2"
+                   <> value 1
+                   <> showDefault)
+    , SomCircle
+        <$> (option auto
+               $ long "circle-length"
+                   <> metavar "X"
+                   <> help "circular grid circumference")
+        <*> (option auto
+               $ long "circle-width"
+                   <> metavar "Y"
+                   <> help "circular grid strip width"
+                   <> value 1
+                   <> showDefault)
+    ]
+
 data GenOpts = GenOpts
-  { genX :: Int
-  , genY :: Int
+  { genShape :: SomShape
   , genDim :: Int
   , genSeed :: (Maybe Int)
   } deriving (Show)
@@ -68,22 +131,7 @@ dimopt =
 
 genopts :: Parser GenOpts
 genopts = do
-  genX <-
-    option auto
-      $ long "som-x"
-          <> short 'x'
-          <> metavar "X"
-          <> help "grid dimension 1"
-          <> value 10
-          <> showDefault
-  genY <-
-    option auto
-      $ long "som-y"
-          <> short 'y'
-          <> metavar "Y"
-          <> help "grid dimension 2"
-          <> value 10
-          <> showDefault
+  genShape <- somshape
   genDim <- dimopt
   genSeed <-
     optional . option auto
