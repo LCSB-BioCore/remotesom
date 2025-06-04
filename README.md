@@ -73,24 +73,36 @@ To feed this data to `remotesom`, you need to format it as an array of D×N
 array of raw 32-bit `float`s. The data must be "row major", i.e., the data
 should form groups of D `float`s each representing one of the N data points.
 
-For example, if you have a matrix in R with features in columns (which is the
-usual setup), you can export it as follows:
+##### R
+
+A matrix in R (variable `myMatrix`) with features in columns (which is the
+usual setup) may be exported to file `mydata.bin` as follows:
 
 ```r
-writeBin(as.vector(t(myMatrix)), "mydata.bin", size=4)
+writeBin(as.vector(t(myMatrix)), "mydata.bin", size = 4)
 ```
 
-Other languages possess similar facilities; in Julia you can write binary data
-using this code:
+##### Julia
+
+Julia matrix (in variable `my_matrix`) with individual features in columns can
+be exported to file `mydata.bin` in the correct format as follows:
+
 ```julia
 open("mydata.bin", "w") do f
     write(f, Float32.(my_matrix'))
 end
 ```
 
-With Python (NumPy), you can equivalently use
-[`ndarray.tofile`](https://numpy.org/devdocs/reference/generated/numpy.ndarray.tofile.html):
+##### Python/NumPy
+
+In Python, you can use
+[`ndarray.tofile`](https://numpy.org/devdocs/reference/generated/numpy.ndarray.tofile.html)
+to export a matrix in variable `my_matrix` to the correctly-formatted
+`mydata.bin` as follows:
+
 ```python
+import numpy as np
+
 my_matrix.T.astype(np.float32).tofile("mydata.bin")
 ```
 
@@ -265,37 +277,84 @@ into other available packages.
 Similar code can be used to examine the exported statistic (means, counts and
 medians) from `remotesom stats` and `remotesom stats-client`.
 
+Sample code that plots the self-organizing map with some of the features and
+counts statistics is provided below.
+
 ##### R
+
 ```r
-library(rjson)
+library(jsonlite)
+library(ggplot2)
 
-# change the constants based on your data:
-som_file <- "out-som.json"
-x <- 10
-y <- 10
-dim <- 5
+topo <- read_json("out-test-topology.json", simplifyVector = T)
+som <- read_json("out-test-som.json", simplifyVector = T)
+counts <- read_json("counts.json", simplifyVector = T)
 
-som <- array(do.call(cbind, fromJSON(file = som_file)), c(dim, x, y))
+plotDimension <- 1  # choose a feature to plot here
+df <- data.frame(
+  x = topo$projection[, 1],
+  y = topo$projection[, 2],
+  feature = som[, plotDimension],
+  count = counts
+)
 
-for(d in 1:dim)
-  heatmap(som[d,,], Colv = NA, Rowv = NA)
+ggplot(df, aes(x, y, color = feature, size = count)) +
+  geom_point() +
+  scale_size_continous(trans='sqrt', range=c(0, 10))
 ```
 
 ##### Julia
+
 ```julia
-using JSON, UnicodePlots
+using JSON, GLMakie
 
-# change the constants based on your data:
-som_file = "out-som.json"
-x = 10
-y = 10
-dim = 5
+topo = JSON.parsefile("out-test-topology.json")
+som = JSON.parsefile("out-test-som.json")
+counts = JSON.parsefile("counts.json")
 
-som = reshape(hcat(JSON.parsefile(som_file)...), (dim,x,y))
+plot_dimension = 1  # choose a feature to plot here
+positions = hcat(topo["projection"]...)'
+features = hcat(som...)'
+weights = sqrt.(counts) ./ maximum(sqrt.(counts))
 
-for d in 1:dim
-    heatmap(som[d,:,:])
-end
+fig = Figure()
+scatter(
+    fig[1,1],
+    positions[:, 1],
+    positions[:, 2],
+    color = features[:, plot_dimension],
+    markersize = 32 .* weights,
+    strokewidth = 0,
+)
+```
+
+##### Python/NumPy
+
+```python
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+
+with open("out-test-topology.json", "r") as f:
+  topo = json.load(f)
+with open("out-test-som.json", "r") as f:
+  som = json.load(f)
+with open("counts.json", "r") as f:
+  counts = json.load(f)
+
+plot_dimension = 0  # choose a feature index to plot here
+positions = np.array(topo["projection"])
+features = np.array(som)
+weights = np.array(counts) / max(counts)
+
+plt.scatter(
+  positions[:, 0],
+  positions[:, 1],
+  c = features[:, plot_dimension],
+  s = weights * 144, # size in matplotlib points
+  linewidth = 0,
+)
+plt.show()
 ```
 
 # FAQ
@@ -334,11 +393,11 @@ limitations that are still present:
   storage. In turn, the processing may get noticeably slower, but not
   impossible.
 - **Internal data structures**: Some parts of the algorithms still need to
-  materialize data-size-dependent arrays, most notably the array of "SOM
-  centroid indexes that are closest to all points" is cached in the median
-  computation to save computation time.  This array requires (on `x86_64`) N×8
-  bytes. Still, with commonly available 16GB of memory, you can still process a
-  hefty dataset of around 2 billion data points on a single host.
+  materialize data-size-dependent arrays; most notably the array of "SOM
+  centroid indexes that are closest to all points" is cached in the local
+  median computation to save computation time. This array usually requires N×8
+  bytes. With commonly available 16GB of memory, you can still process a hefty
+  dataset of around 2 billion data points on a single host.
 
 If you run out of memory because of the data size, you can split the dataset
 into several data hosts without any impact on the result. In turn, this enables
