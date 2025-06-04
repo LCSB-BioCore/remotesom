@@ -300,7 +300,7 @@ df <- data.frame(
 
 ggplot(df, aes(x, y, color = feature, size = count)) +
   geom_point() +
-  scale_size_continous(trans='sqrt', range=c(0, 10))
+  scale_size_continous(trans = 'sqrt', range = c(0, 10))
 ```
 
 ##### Julia
@@ -427,9 +427,9 @@ In such case, you can export many "parts" of the dataset independently, e.g.
 like this in R:
 ```r
 # ...prepare first part of data to myMatrix...
-writeBin(as.vector(t(myMatrix)), "mydata1.bin", size=4)
+writeBin(as.vector(t(myMatrix)), "mydata1.bin", size = 4)
 # ...prepare another part of the data into myMatrix...
-writeBin(as.vector(t(myMatrix)), "mydata2.bin", size=4)
+writeBin(as.vector(t(myMatrix)), "mydata2.bin", size = 4)
 ```
 ...and concatenate them via command line into one big data blob:
 ```sh
