@@ -315,7 +315,7 @@ counts = JSON.parsefile("counts.json")
 plot_dimension = 1  # choose a feature to plot here
 positions = hcat(topo["projection"]...)'
 features = hcat(som...)'
-weights = sqrt.(counts) ./ maximum(sqrt.(counts))
+sizes = sqrt.(counts) ./ maximum(sqrt.(counts))
 
 fig = Figure()
 scatter(
@@ -323,7 +323,7 @@ scatter(
     positions[:, 1],
     positions[:, 2],
     color = features[:, plot_dimension],
-    markersize = 32 .* weights,
+    markersize = sizes .* 32, # size in makie points
     strokewidth = 0,
 )
 ```
