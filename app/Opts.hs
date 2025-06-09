@@ -473,13 +473,15 @@ subsetspec =
         $ short 's'
             <> long "subset"
             <> metavar "INDEX"
-            <> help "include this neigborhood index in the subset"
+            <> help
+                 "include this neigborhood index in the subset (can be specified repeatedly)"
     ]
 
 data SubsetOpts = SubsetOpts
   { soSpecs :: [SubsetSpec]
   , soCustomData :: Maybe (FilePath, Int)
-  , soOutput :: FilePath
+  , soMemberOutput :: Maybe FilePath
+  , soOutput :: Maybe FilePath
   } deriving (Show)
 
 subsetopts :: Parser SubsetOpts
@@ -493,7 +495,9 @@ subsetopts = do
                    <> long "in-set"
                    <> metavar "SETFILE"
                    <> help
-                        "instead of subsetting the input data points, subset the entries in this file (useful for subsetting various metadata attached to points)")
+                        ("instead of subsetting the input data points,"
+                           ++ " subset the entries in this file"
+                           ++ " (useful for subsetting various metadata attached to points)"))
           <*> option
                 auto
                 (short 'b'
@@ -501,11 +505,21 @@ subsetopts = do
                    <> metavar "BYTES"
                    <> help "byte size of each entry in the SETFILE")
   soOutput <-
-    strOption
+    optional . strOption
       $ short 'O'
           <> long "out-subset"
           <> metavar "OUTFILE"
-          <> help "write the data subset to this file"
+          <> help
+               ("write the data subset to this file"
+                  ++ " and print out the amount of entries written")
+  soMemberOutput <-
+    optional . strOption
+      $ short 'M'
+          <> long "out-neighborhoods"
+          <> metavar "OUTFILE"
+          <> help
+               ("also write the neighborhood indexes for each of the files into this file"
+                  ++ " (the file is formatted as an array of 4-byte integers in host byte order)")
   pure SubsetOpts {..}
 
 data Cmd

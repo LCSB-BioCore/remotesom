@@ -29,9 +29,10 @@ import Control.Monad (unless)
 import qualified Data.Aeson as J
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
+import qualified Data.Array.Accelerate.LLVM.Native as LL
 import Data.Foldable (foldlM)
+import qualified Data.IntSet as S
 import Data.List (foldl1')
-import qualified Data.Set as S
 import Foreign.Ptr (plusPtr)
 import System.IO
 import System.IO.MMap
@@ -212,16 +213,28 @@ run (SubsetCmd so iopts insom) = do
       inSpec (SubsetIndex i) = pure $ S.singleton i
       inSpec (SubsetFile fp) = S.fromList <$> decodeFile fp
   subset <- S.unions <$> traverse inSpec (soSpecs so)
-  n <-
-    withMmapPoints iopts dim $ \points ->
-      mmapWithFilePtr indata ReadOnly (Just (0, esz * inputPoints iopts)) $ \(ptrData, _) ->
-        bracket (openFile (soOutput so) WriteMode) hClose $ \hOut -> do
-          let cs = somClosestLL points som
-          fmap (length . filter id) . flip traverse (zip [0 ..] $ A.toList cs) $ \(offset, c) ->
-            if c `S.member` subset
-              then True <$ hPutBuf hOut (plusPtr ptrData $ esz * offset) esz
-              else pure False
-  print n
+  withMmapPoints iopts dim $ \points -> do
+    let cs = somClosestLL points som
+    case soMemberOutput so of
+      Nothing -> pure ()
+      Just output ->
+        writeArrayStorable
+          (LL.run $ A.map A.fromIntegral (A.use cs) :: A.Vector A.Word32)
+          output
+    case soOutput so of
+      Nothing -> pure ()
+      Just output -> do
+        n <-
+          mmapWithFilePtr indata ReadOnly (Just (0, esz * inputPoints iopts)) $ \(ptrData, _) ->
+            bracket (openFile output WriteMode) hClose $ \hOut ->
+              let go (i, n) c =
+                    if c `S.member` subset
+                      then do
+                        hPutBuf hOut (plusPtr ptrData $ esz * i) esz
+                        pure (i + 1, n + 1)
+                      else pure (i + 1, n)
+               in snd <$> foldlM go (0 :: Int, 0 :: Int) (A.toList cs)
+        print n
 
 {-
  - Base operations

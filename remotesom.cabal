@@ -51,6 +51,7 @@ executable remotesom
   other-modules:    Paths_remotesom
   build-depends:
     , accelerate >= 1.3
+    , accelerate-llvm-native
     , aeson
     , async
     , base
