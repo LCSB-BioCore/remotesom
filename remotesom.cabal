@@ -55,10 +55,12 @@ executable remotesom
     , async
     , base
     , bytestring
+    , containers
     , crypton-x509
     , crypton-x509-validation
     , crypton-x509-store
     , crypton-x509-system
+    , mmap
     , network
     , network-run
     , optparse-applicative

@@ -456,6 +456,58 @@ clientopts = do
           <> help "TLS client private key"
   pure ClientOpts {..}
 
+data SubsetSpec
+  = SubsetFile FilePath
+  | SubsetIndex Int
+  deriving (Show)
+
+subsetspec :: Parser SubsetSpec
+subsetspec =
+  asum
+    [ fmap SubsetFile . strOption
+        $ long "subset-file"
+            <> short 'S'
+            <> metavar "JSON"
+            <> help "load the neighborhood indexes from a JSON array in a file"
+    , fmap SubsetIndex . option auto
+        $ short 's'
+            <> long "subset"
+            <> metavar "INDEX"
+            <> help "include this neigborhood index in the subset"
+    ]
+
+data SubsetOpts = SubsetOpts
+  { soSpecs :: [SubsetSpec]
+  , soCustomData :: Maybe (FilePath, Int)
+  , soOutput :: FilePath
+  } deriving (Show)
+
+subsetopts :: Parser SubsetOpts
+subsetopts = do
+  soSpecs <- many subsetspec
+  soCustomData <-
+    optional
+      $ (,)
+          <$> strOption
+                (short 'I'
+                   <> long "in-set"
+                   <> metavar "SETFILE"
+                   <> help
+                        "instead of subsetting the input data points, subset the entries in this file (useful for subsetting various metadata attached to points)")
+          <*> option
+                auto
+                (short 'b'
+                   <> long "entry-size"
+                   <> metavar "BYTES"
+                   <> help "byte size of each entry in the SETFILE")
+  soOutput <-
+    strOption
+      $ short 'O'
+          <> long "out-subset"
+          <> metavar "OUTFILE"
+          <> help "write the data subset to this file"
+  pure SubsetOpts {..}
+
 data Cmd
   = GenCmd GenOpts FilePath FilePath
   | TrainCmd TrainOpts InputOpts
@@ -465,6 +517,7 @@ data Cmd
   | ServerCmd ServerOpts InputOpts Int
   | ClientTrainCmd ClientServers ClientOpts TrainOpts
   | ClientStatsCmd ClientServers ClientOpts StatsOpts
+  | SubsetCmd SubsetOpts InputOpts String
   deriving (Show)
 
 -- TODO: it might be viable to also have "manual" commands for the medians
@@ -494,6 +547,9 @@ cmds =
   , ( "stats-client"
     , "Generate stats from data on remote servers"
     , ClientStatsCmd <$> clientservers <*> clientopts <*> statsopts)
+  , ( "subset"
+    , "Reduce datasets to the selected SOM neighborhoods and print the size of reduced dataset"
+    , SubsetCmd <$> subsetopts <*> inopts <*> somin)
   ]
 
 cmd :: Parser Cmd

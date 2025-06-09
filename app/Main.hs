@@ -24,12 +24,17 @@ import Numeric.RemoteSOM.RunN
 import Opts
 
 import Control.Concurrent.Async (forConcurrently)
+import Control.Exception (bracket)
 import Control.Monad (unless)
 import qualified Data.Aeson as J
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import Data.Foldable (foldlM)
 import Data.List (foldl1')
+import qualified Data.Set as S
+import Foreign.Ptr (plusPtr)
+import System.IO
+import System.IO.MMap
 import System.Random
 
 main :: IO ()
@@ -198,6 +203,25 @@ run (ClientStatsCmd servers copts opts) = do
           pure $ somMedianCountStepLL ltcs mcounts med bs
     bs' <- iterateNM step (mediansIters mo) bs0
     J.encodeFile (mediansOut mo) . matrixArray $ somMedianMedLL bs'
+-- reduce a dataset to a subset
+run (SubsetCmd so iopts insom) = do
+  som <- arrayMatrix <$> decodeFile insom
+  let (Z :. _ :. dim) = A.arrayShape som
+      esz = maybe (4 * dim) snd $ soCustomData so
+      indata = maybe (inputData iopts) fst $ soCustomData so
+      inSpec (SubsetIndex i) = pure $ S.singleton i
+      inSpec (SubsetFile fp) = S.fromList <$> decodeFile fp
+  subset <- S.unions <$> traverse inSpec (soSpecs so)
+  n <-
+    withMmapPoints iopts dim $ \points ->
+      mmapWithFilePtr indata ReadOnly (Just (0, esz * inputPoints iopts)) $ \(ptrData, _) ->
+        bracket (openFile (soOutput so) WriteMode) hClose $ \hOut -> do
+          let cs = somClosestLL points som
+          fmap (length . filter id) . flip traverse (zip [0 ..] $ A.toList cs) $ \(offset, c) ->
+            if c `S.member` subset
+              then True <$ hPutBuf hOut (plusPtr ptrData $ esz * offset) esz
+              else pure False
+  print n
 
 {-
  - Base operations
