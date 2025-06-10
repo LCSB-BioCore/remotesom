@@ -256,7 +256,7 @@ using the same data on remote data hosts, you can run the command as follows:
 
 ```sh
 remotesom stats-client \
-  -i out-test-som.json \
+  -i out-som.json \
   --out-means means.json \
   --out-variances variances.json \
   --out-counts counts.json \
@@ -357,6 +357,65 @@ plt.scatter(
 plt.show()
 ```
 
+### Subset the data to a region of interest
+
+Quite often it is useful to reduce the data to one or more regions of interest
+-- for example, this helps with removing outliers, and for clustering
+interesting parts of the data in greater detail.
+
+Once you have examined the SOM and identified the clusters that you want to
+focus on, you can use `remotesom subset` to cut out these clusters of the data:
+
+```sh
+remotesom subset \
+  -i out-test-som.json \
+  -D mydata.bin -n "<DATA SIZE N>" \
+  -s 0 -s 1 -s 5 -s 10 \
+  -O mysubset.bin
+```
+
+(You can add as many clusters to the subset, using the `-s` option as required.
+The cluster numbers correspond exactly to the indexes of the array "centroids"
+in the array stored in the SOM file (`out-test-som.json` in this case). Note
+the clusters are numbered from zero!)
+
+After finishing, the `subset` command prints out the total number of points
+that are included in the subset. You can use that in subsequent analysis as the
+new data size for the option `-n`:
+```sh
+remotesom train \
+  [...]
+  -D mysubset.bin -n "<NUMBER PRINTED BY SUBSET>" \
+  [...]
+```
+
+##### Subsetting data on data hosts
+
+The same can be performed also on data hosts -- the coordinator shares the SOM
+and their choice of sub-clusters with the data hosts, each of whom may subset
+their own part of the data individually. For convenience, the sub-cluster can be
+also saved as JSON file, as a plain array of integers.
+
+In this case, the coordinator shares the `out-som.json` and a file
+`subset.json` that contains an array like this one (corresponds to the command
+above):
+```json
+[0, 1, 5, 10]
+```
+
+Each data host then runs:
+```sh
+remotesom subset \
+  -i out-som.json \
+  -D mydata.bin -N "<DATA SIZE N>" \
+  --subset-file subset.json \
+  -O mysubset.bin
+```
+
+After the subsetting, the analysis may continue with data hosts serving the
+`mysubset.bin` using `remotesom serve`, and the coordinator training and
+analyzing a new SOM upon that.
+
 # FAQ
 
 #### Is the training reproducible?
@@ -435,7 +494,19 @@ writeBin(as.vector(t(myMatrix)), "mydata2.bin", size = 4)
 ```sh
 cat mydata1.bin mydata2.bin > mydata.bin
 ```
-(Similar method can be applied in all languages.)
+(Similar method can be applied also in Julia, Python, and other environments.)
+
+#### Can I access the cluster membership details programatically?
+
+`remotesom subset` supports option `-M` that lets you export a vector of
+cluster memberships for each input data point, which you can use to run
+advanced statistics and subsetting on the data.
+
+For convenience, there's also support for subsetting "related data"; e.g.,
+metadata about points that were not included in the actual dataset (such as
+`mydata.bin`), via options `-I` and `-b`.
+
+Refer to `remotesom subset --help` for details.
 
 #### Can I use a different SOM topology?
 
