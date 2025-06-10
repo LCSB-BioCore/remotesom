@@ -118,20 +118,25 @@ remotesom train \
   -x 5 -y 5 -d "<DIMENSION D>" \
   -T out-test-topology.json -o out-test-som.json \
   -s 5 -s 4 -s 3 -s 2 -s 1 -s 0.5 \
-  -D mydata.bin -n "<DATA SIZE N>"
+  -D mydata.bin
 ```
 
 This will output the trained SOM in `out-test-som.json`. The JSON file will
 contain an array of arrays of numbers; each of the arrays represents one
 feature vector that corresponds to one SOM centroid. The SOM topology is saved
-in `out-test-topoology.json` as a matrix of squared distances of the SOM nodes
+in `out-test-topology.json` as a matrix of squared distances of the SOM nodes
 in the map space (i.e., *not* centroids in data space), the JSON contains an
 array of arrays of numbers, forming the columns of the all-to-all distance
 matrix.
 
-It is advisable for all data hosts to locally verify that their data is in a
-good shape to train at least a local SOM before starting the federated
-training.
+The command assumes the number of the data points from the size of `mydata.bin`
+(as divided by the dimension in `-d` and the size of a single `float32`). To
+avoid the extra "guessing" step, you can also specify exact data size using
+option `-n`, such as `-n 10000`.
+
+Before starting the federated training, it is advisable for all data hosts to
+locally verify that their data is in a good shape by training and examining
+such local SOM.
 
 ### Prepare and exchange the keys (on all nodes)
 
@@ -196,14 +201,14 @@ Refer to documentation of `ssh` for details.
 
 Each data host starts their own server by pointing it to the appropriate
 cryptography keys and the local data source:
-
 ```sh
 remotesom server \
-  -D mydata.bin -n "<DATA SIZE N>" -d "<DIMENSION D>" \
+  -D mydata.bin -d "<DIMENSION D>" \
   -c server-cert.pem -k server-key.pem -a client-cert.pem
 ```
-(The data size and dimension must be filled in, depending on the dataset. See
-`remotesom server --help` for all network&security parameters.)
+(The data dimension `-d` must be filled in, depending on the dataset;
+optionally it is also adviseable to specify the datapoint count using `-n`. For
+details about network&security parameters, see `remotesom server --help`.)
 
 ### Run the training (on coordinator)
 
@@ -212,17 +217,19 @@ Once data hosts are ready, the coordinator runs several epochs of SOM training:
 remotesom train-client \
   -x 10 -y 10 -d "<DIMENSION D>" \
   -T out-topology.json -o out-som.json \
-  -s 10 -s 9 -s 8 -s 7 -s 6 -s 5 -s 4 -s 3 -s 2 -s 1 -s 0.5 \ # add more training epochs as needed
+  -s 10 -s 9 -s 8 -s 7 -s 6 -s 5 -s 4 -s 3 -s 2 -s 1 -s 0.5 \
   -c client-cert.pem -k client-key.pem \
   connect datahost.uni1.example.org -a server-cert1.pem \
   connect hpc.uni2.example.org -a server-cert2.pem \
   ... # more data host connections
 ```
-(The coordinator must fill in the data dimension D, and server certificates and
+(The coordinator must fill in the data dimension `-D`, and the server certificates and
 hostnames (and possibly other parameters) of all data hosts. See `remotesom
 train-client connect --help` for all connection&security parameters.)
 
-If everything runs well, the trained 10×10 SOM will appear in `som.json`.
+If everything runs well, the trained 10×10 SOM will appear in `out-som.json`.
+For realistic data and larger SOMs, the number of training epochs will
+typically need to be adjusted by adding more `-s` options.
 
 ### Compute per-cluster statistics (locally, on data nodes)
 
@@ -234,8 +241,7 @@ command:
 
 ```sh
 remotesom stats \
-  -i out-test-som.json \
-  -D mydata.bin -n "<DATA SIZE N>" \
+  -i out-test-som.json -D mydata.bin \
   --out-means means.json \
   --out-variances variances.json \
   --out-counts counts.json \
@@ -368,8 +374,7 @@ focus on, you can use `remotesom subset` to cut out these clusters of the data:
 
 ```sh
 remotesom subset \
-  -i out-test-som.json \
-  -D mydata.bin -n "<DATA SIZE N>" \
+  -i out-test-som.json -D mydata.bin \
   -s 0 -s 1 -s 5 -s 10 \
   -O mysubset.bin
 ```
@@ -380,8 +385,8 @@ in the array stored in the SOM file (`out-test-som.json` in this case). Note
 the clusters are numbered from zero!)
 
 After finishing, the `subset` command prints out the total number of points
-that are included in the subset. You can use that in subsequent analysis as the
-new data size for the option `-n`:
+that are included in the subset. If desired, you can use that in subsequent
+analysis as the new data size for the option `-n`:
 ```sh
 remotesom train \
   [...]
@@ -453,15 +458,16 @@ limitations that are still present:
   impossible.
 - **Internal data structures**: Some parts of the algorithms still need to
   materialize data-size-dependent arrays; most notably the array of "SOM
-  centroid indexes that are closest to all points" is cached in the local
-  median computation to save computation time. This array usually requires N×8
-  bytes. With commonly available 16GB of memory, you can still process a hefty
-  dataset of around 2 billion data points on a single host.
+  centroid indexes that are closest to all points" is cached in several
+  algorithms (notably, the local median computation and subsetting). This array
+  usually requires N×8 bytes. With commonly available 16GB of memory, you can
+  still process a hefty dataset of around 2 billion data points on a single
+  host.
 
 If you run out of memory because of the data size, you can split the dataset
 into several data hosts without any impact on the result. In turn, this enables
-horizontal scalability --- the speed & amount of data processed at once is only
-limited by the amount of computers you can attach to the analysis.
+horizontal scalability --- the speed & total amount of data processed at once
+is only limited by the amount of computers you can attach to the analysis.
 
 ##### SOM size limits
 

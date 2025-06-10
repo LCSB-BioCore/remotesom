@@ -143,7 +143,7 @@ genopts = do
 
 data InputOpts = InputOpts
   { inputData :: FilePath
-  , inputPoints :: Int
+  , inputPoints :: Maybe Int
   } deriving (Show)
 
 inopts :: Parser InputOpts
@@ -155,11 +155,13 @@ inopts = do
           <> metavar "DATA"
           <> help "binary file with input data"
   inputPoints <-
-    option auto
+    optional . option auto
       $ long "in-points"
           <> short 'n'
           <> metavar "N"
-          <> help "number of datapoints in the input file"
+          <> help
+               ("number of datapoints in the input file"
+                  ++ " (by default, this is guessed from file size)")
   pure InputOpts {..}
 
 data TrainOpts = TrainOpts

@@ -31,6 +31,7 @@ import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate (Z(..), (:.)(..))
 import qualified Data.Array.Accelerate.LLVM.Native as LL
 import Data.Foldable (foldlM)
+import Data.Function ((&))
 import qualified Data.IntSet as S
 import Data.List (foldl1')
 import Foreign.Ptr (plusPtr)
@@ -52,8 +53,18 @@ decodeFile file = do
     Right x' -> pure x'
 
 withMmapPoints :: InputOpts -> Int -> (A.Matrix Float -> IO a) -> IO a
-withMmapPoints iopts dim =
-  withMmapArray (Z :. inputPoints iopts :. dim) (inputData iopts)
+withMmapPoints iopts dim go = do
+  n <-
+    inputPoints iopts
+      & flip
+          maybe
+          pure
+          (maybe (error "error guessing the size of input") id
+             <$> getFileEntryCount
+                   (Z :. dim)
+                   (undefined :: Float)
+                   (inputData iopts))
+  withMmapArray (Z :. n :. dim) (inputData iopts) go
 
 withJust :: Applicative m => Maybe a -> (a -> m ()) -> m ()
 withJust (Just x) m = m x
@@ -215,6 +226,7 @@ run (SubsetCmd so iopts insom) = do
   subset <- S.unions <$> traverse inSpec (soSpecs so)
   withMmapPoints iopts dim $ \points -> do
     let cs = somClosestLL points som
+        (Z :. npoints :. _) = A.arrayShape points
     case soMemberOutput so of
       Nothing -> pure ()
       Just output ->
@@ -225,7 +237,7 @@ run (SubsetCmd so iopts insom) = do
       Nothing -> pure ()
       Just output -> do
         n <-
-          mmapWithFilePtr indata ReadOnly (Just (0, esz * inputPoints iopts)) $ \(ptrData, _) ->
+          mmapWithFilePtr indata ReadOnly (Just (0, esz * npoints)) $ \(ptrData, _) ->
             bracket (openFile output WriteMode) hClose $ \hOut ->
               let go (i, n) c =
                     if c `S.member` subset

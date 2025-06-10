@@ -57,6 +57,14 @@ writeArrayStorable a fp = do
   bracket (openFile fp WriteMode) hClose $ \h ->
     SV.hPut h . SV.pack $ A.toList a
 
+getFileEntryCount ::
+     (A.Shape sh, Storable a) => sh -> a -> FilePath -> IO (Maybe Int)
+getFileEntryCount sh a fp = do
+  sz <- fromInteger <$> bracket (openFile fp ReadMode) (hClose) hFileSize
+  case divMod sz $ shapeSize' sh * sizeOf a of
+    (n, 0) -> pure (Just n)
+    _ -> pure Nothing
+
 withMmapArray ::
      forall sh a r.
      ( A.Shape sh
