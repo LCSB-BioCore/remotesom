@@ -218,7 +218,7 @@ medianopts = do
     option auto
       $ long "median-iters"
           <> metavar "N"
-          <> help "nummber of iterations of the median approximation"
+          <> help "number of iterations of the median approximation"
   pure MedianOpts {..}
 
 data StatsOpts = StatsOpts

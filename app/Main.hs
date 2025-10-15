@@ -227,15 +227,9 @@ run (SubsetCmd so iopts insom) = do
   withMmapPoints iopts dim $ \points -> do
     let cs = somClosestLL points som
         (Z :. npoints :. _) = A.arrayShape points
-    case soMemberOutput so of
-      Nothing -> pure ()
-      Just output ->
-        writeArrayStorable
+    withJust (soMemberOutput so) $ writeArrayStorable
           (LL.run $ A.map A.fromIntegral (A.use cs) :: A.Vector A.Word32)
-          output
-    case soOutput so of
-      Nothing -> pure ()
-      Just output -> do
+    withJust (soOutput so) $ \output -> do
         n <-
           mmapWithFilePtr indata ReadOnly (Just (0, esz * npoints)) $ \(ptrData, _) ->
             bracket (openFile output WriteMode) hClose $ \hOut ->
