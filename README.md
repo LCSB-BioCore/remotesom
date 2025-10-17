@@ -55,14 +55,13 @@ cabal install
 To install `cabal` packaging tool and generally the Haskell platform and
 compiler, use [GHCup](https://www.haskell.org/ghcup/).
 
-To compile successfully, you also need a working development installation of
-LLVM-15. (To validate, check out if `llvm-config` command works for you and
-gives the correct version 15.) LLVM can be usually obtained from OS packages,
-typically under a name such as `llvm-15-dev` or similar. LLVM is required for
-Accelerate framework to optimize the numeric code for your platform; for
-additional details on the installation see [the appropriate section of the
+To run `remotesom` successfully, you will also need a working installation of
+LLVM's `clang` (which is used by Accelerate framework to compile and optimize
+the numeric computation kernels). Generally, any version greater than
+`clang-15` works; and distribution packages (such as ones gotten by `apt
+install clang`) are typically OK. For installation details, see [the
 documentation of
-accelerate-llvm](https://github.com/AccelerateHS/accelerate-llvm/blob/master/README.md#installing-llvm).
+accelerate-llvm](https://github.com/AccelerateHS/accelerate-llvm/blob/master/README.md).
 
 ### Prepare the data (on each data host)
 
