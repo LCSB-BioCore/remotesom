@@ -17,30 +17,32 @@ module Network where
 
 import Opts
 
+import Control.Exception (SomeException, catch, throwIO)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
 import Data.String (fromString)
-import qualified Network.Run.TCP as TCP
-import qualified Network.Socket as S
-
 import qualified Data.X509 as X509
 import qualified Data.X509.CertificateStore as X509
 import qualified Data.X509.Validation as V
+import qualified Network.Run.TCP as TCP
+import qualified Network.Socket as S
 import qualified Network.TLS as TLS
+import System.IO (hPutStrLn, stderr)
 import qualified System.X509 as X509
 
 readTillNewline :: TLS.Context -> IO LB.ByteString
 readTillNewline ctx = go []
   where
     newlineChar = 10
-    go buf = do
-      x <- TLS.recvData ctx
-      case () of
-        _
-          | B.null x -> error "EOF received before newline was read"
-          | Just ix <- B.elemIndex newlineChar x ->
-            pure . LB.fromChunks . reverse $ B.take ix x : buf
-          | otherwise -> go (x : buf)
+    go buf = TLS.recvData ctx >>= cont buf
+    cont buf x
+      | B.null x =
+        error
+          $ "EOF received before newline was read, so far had chunks: "
+              ++ show (map B.length buf)
+      | Just ix <- B.elemIndex newlineChar x =
+        pure . LB.fromChunks . reverse $ B.take ix x : buf
+      | otherwise = go (x : buf)
 
 readCACerts :: TrustOpts -> IO X509.CertificateStore
 readCACerts topts = do
@@ -56,6 +58,12 @@ readCACerts topts = do
   local <- mconcat <$> traverse readCertStore (trustCerts topts)
   pure $ sys <> local
 
+bracketShowError :: IO a -> IO a
+bracketShowError =
+  flip catch $ \e -> do
+    hPutStrLn stderr $ show (e :: SomeException)
+    throwIO e
+
 interactServer :: ServerOpts -> (LB.ByteString -> IO LB.ByteString) -> IO ()
 interactServer opts oracle = do
   cred <-
@@ -65,35 +73,35 @@ interactServer opts oracle = do
             (serverCertChain opts)
             (serverKey opts)
   cacerts <- readCACerts (serverTrust opts)
-  TCP.runTCPServer (serverBindHost opts) (serverBindService opts) $ \sock -> do
-    -- TODO this is bracketed to discard all errors, print them out instead
-    let p = TLS.defaultParamsServer
-        h = TLS.serverHooks p
-        sh = TLS.serverShared p
-        validate
-          | trustSkipAllValidation $ serverTrust opts =
-            \_ -> do
-              putStrLn
-                "WARNING: TLS validation skipped, letting a random person in!"
-              pure TLS.CertificateUsageAccept
-          | otherwise =
-            TLS.validateClientCertificate cacerts TLS.defaultValidationCache
-    ctx <-
-      TLS.contextNew
-        sock
-        p
-          { TLS.serverHooks = h {TLS.onClientCertificate = validate}
-          , TLS.serverWantClientCert = True
-          , TLS.serverShared =
-              sh {TLS.sharedCredentials = TLS.Credentials [cred]}
-          }
-    TLS.handshake ctx
-    q <- readTillNewline ctx
-    r <- oracle q
-    TLS.sendData ctx r
-    TLS.sendData ctx $ fromString "\n"
-    TLS.bye ctx
-    S.close sock
+  TCP.runTCPServer (serverBindHost opts) (serverBindService opts) $ \sock ->
+    bracketShowError $ do
+      let p = TLS.defaultParamsServer
+          h = TLS.serverHooks p
+          sh = TLS.serverShared p
+          validate
+            | trustSkipAllValidation $ serverTrust opts =
+              \_ -> do
+                putStrLn
+                  "WARNING: TLS validation skipped, letting a random person in!"
+                pure TLS.CertificateUsageAccept
+            | otherwise =
+              TLS.validateClientCertificate cacerts TLS.defaultValidationCache
+      ctx <-
+        TLS.contextNew
+          sock
+          p
+            { TLS.serverHooks = h {TLS.onClientCertificate = validate}
+            , TLS.serverWantClientCert = True
+            , TLS.serverShared =
+                sh {TLS.sharedCredentials = TLS.Credentials [cred]}
+            }
+      TLS.handshake ctx
+      q <- readTillNewline ctx
+      r <- oracle q
+      TLS.sendData ctx r
+      TLS.sendData ctx $ fromString "\n"
+      TLS.bye ctx
+      S.close sock
 
 runClientQuery ::
      ClientConnect -> ClientOpts -> LB.ByteString -> IO LB.ByteString
