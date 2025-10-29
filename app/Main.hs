@@ -146,28 +146,34 @@ run (AggregateCmd opts) = do
 run (ServerCmd sopts iopts dim) =
   withMmapPoints iopts dim $ \points ->
     interactServer sopts $ \q ->
-      case either error id $ J.eitherDecode q of
-        QueryDataSummary som' -> do
-          let som = arrayMatrix som'
-              (Z :. _ :. dim') = A.arrayShape som
-          unless (dim == dim') $ error "som dimensions do not match"
-          pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
-        QueryStats som' -> do
-          let som = arrayMatrix som'
-              (Z :. _ :. dim') = A.arrayShape som
-          unless (dim == dim') $ error "som dimensions do not match"
-          pure . J.encode . uncurry3 statsSummaryArray
-            $ somSumSqsumCountsLL points som
-        QueryLessThan som' med' -> do
-          let som = arrayMatrix som'
-              med = arrayMatrix med'
-              sh@(Z :. nsom :. dim') = A.arrayShape som
-          unless (sh == A.arrayShape med && dim == dim')
-            $ error "sizes do not match"
-          let cs = somClosestLL points som
-              ltcs = somLtCountsLL points cs med
-              counts = somCountsLL (scalar nsom) cs
-          pure . J.encode $ ltCsArray ltcs counts
+      let sizeCheck =
+            (`unless` error "som query has too many clusters")
+              . maybe (const True) (>=) (serverMaxQueryClusters sopts)
+       in case either error id $ J.eitherDecode q of
+            QueryDataSummary som' -> do
+              let som = arrayMatrix som'
+                  (Z :. nsom :. dim') = A.arrayShape som
+              unless (dim == dim') $ error "som dimensions do not match"
+              sizeCheck nsom
+              pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
+            QueryStats som' -> do
+              let som = arrayMatrix som'
+                  (Z :. nsom :. dim') = A.arrayShape som
+              unless (dim == dim') $ error "som dimensions do not match"
+              sizeCheck nsom
+              pure . J.encode . uncurry3 statsSummaryArray
+                $ somSumSqsumCountsLL points som
+            QueryLessThan som' med' -> do
+              let som = arrayMatrix som'
+                  med = arrayMatrix med'
+                  sh@(Z :. nsom :. dim') = A.arrayShape som
+              unless (sh == A.arrayShape med && dim == dim')
+                $ error "sizes do not match"
+              sizeCheck nsom
+              let cs = somClosestLL points som
+                  ltcs = somLtCountsLL points cs med
+                  counts = somCountsLL (scalar nsom) cs
+              pure . J.encode $ ltCsArray ltcs counts
 -- run the training client
 run (ClientTrainCmd servers copts opts) = do
   unless (not $ null servers) $ error "no servers to connect to"
@@ -227,20 +233,21 @@ run (SubsetCmd so iopts insom) = do
   withMmapPoints iopts dim $ \points -> do
     let cs = somClosestLL points som
         (Z :. npoints :. _) = A.arrayShape points
-    withJust (soMemberOutput so) $ writeArrayStorable
+    withJust (soMemberOutput so)
+      $ writeArrayStorable
           (LL.run $ A.map A.fromIntegral (A.use cs) :: A.Vector A.Word32)
     withJust (soOutput so) $ \output -> do
-        n <-
-          mmapWithFilePtr indata ReadOnly (Just (0, esz * npoints)) $ \(ptrData, _) ->
-            bracket (openFile output WriteMode) hClose $ \hOut ->
-              let go (i, n) c =
-                    if c `S.member` subset
-                      then do
-                        hPutBuf hOut (plusPtr ptrData $ esz * i) esz
-                        pure (i + 1, n + 1)
-                      else pure (i + 1, n)
-               in snd <$> foldlM go (0 :: Int, 0 :: Int) (A.toList cs)
-        print n
+      n <-
+        mmapWithFilePtr indata ReadOnly (Just (0, esz * npoints)) $ \(ptrData, _) ->
+          bracket (openFile output WriteMode) hClose $ \hOut ->
+            let go (i, n) c =
+                  if c `S.member` subset
+                    then do
+                      hPutBuf hOut (plusPtr ptrData $ esz * i) esz
+                      pure (i + 1, n + 1)
+                    else pure (i + 1, n)
+             in snd <$> foldlM go (0 :: Int, 0 :: Int) (A.toList cs)
+      print n
 
 {-
  - Base operations

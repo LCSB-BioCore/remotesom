@@ -360,6 +360,7 @@ data ServerOpts = ServerOpts
   , serverCertChain :: [FilePath]
   , serverKey :: FilePath
   , serverTrust :: TrustOpts
+  , serverMaxQueryClusters :: Maybe Int
   } deriving (Show)
 
 serveropts :: Parser ServerOpts
@@ -398,6 +399,11 @@ serveropts = do
           <> metavar "PEM"
           <> help "TLS server private key"
   serverTrust <- trustopts
+  serverMaxQueryClusters <-
+    optional . option auto
+      $ long "max-query-clusters"
+          <> metavar "N"
+          <> help "limit the queries to maximum resolution of N clusters"
   pure ServerOpts {..}
 
 type ClientServers = [ClientConnect]
