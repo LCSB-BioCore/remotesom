@@ -24,6 +24,7 @@ import Numeric.RemoteSOM.RunN
 import Opts
 
 import Control.Concurrent.Async (forConcurrently)
+import Control.Concurrent.MVar
 import Control.Exception (bracket)
 import Control.Monad (unless)
 import qualified Data.Aeson as J
@@ -143,37 +144,44 @@ run (AggregateCmd opts) = do
           $ aggregate nsom dim sumss countss topo (aggregateSigma opts)
   J.encodeFile (aggregateSomOut opts) som
 -- run a server
-run (ServerCmd sopts iopts dim) =
+run (ServerCmd sopts iopts dim) = do
+  queryCtr <- newMVar 0
   withMmapPoints iopts dim $ \points ->
-    interactServer sopts $ \q ->
+    interactServer sopts $ \q -> do
       let sizeCheck =
             (`unless` error "som query has too many clusters")
               . maybe (const True) (>=) (serverMaxQueryClusters sopts)
-       in case either error id $ J.eitherDecode q of
-            QueryDataSummary som' -> do
-              let som = arrayMatrix som'
-                  (Z :. nsom :. dim') = A.arrayShape som
-              unless (dim == dim') $ error "som dimensions do not match"
-              sizeCheck nsom
-              pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
-            QueryStats som' -> do
-              let som = arrayMatrix som'
-                  (Z :. nsom :. dim') = A.arrayShape som
-              unless (dim == dim') $ error "som dimensions do not match"
-              sizeCheck nsom
-              pure . J.encode . uncurry3 statsSummaryArray
-                $ somSumSqsumCountsLL points som
-            QueryLessThan som' med' -> do
-              let som = arrayMatrix som'
-                  med = arrayMatrix med'
-                  sh@(Z :. nsom :. dim') = A.arrayShape som
-              unless (sh == A.arrayShape med && dim == dim')
-                $ error "sizes do not match"
-              sizeCheck nsom
-              let cs = somClosestLL points som
-                  ltcs = somLtCountsLL points cs med
-                  counts = somCountsLL (scalar nsom) cs
-              pure . J.encode $ ltCsArray ltcs counts
+      case serverMaxQueries sopts of
+        Just maxQueries -> do
+          currentCtr <- min maxQueries . succ <$> takeMVar queryCtr
+          putMVar queryCtr currentCtr
+          unless (currentCtr < maxQueries) $ error "query limit reached"
+        _ -> pure ()
+      case either error id $ J.eitherDecode q of
+        QueryDataSummary som' -> do
+          let som = arrayMatrix som'
+              (Z :. nsom :. dim') = A.arrayShape som
+          unless (dim == dim') $ error "som dimensions do not match"
+          sizeCheck nsom
+          pure . J.encode . uncurry summaryArray $ somSumCountsLL points som
+        QueryStats som' -> do
+          let som = arrayMatrix som'
+              (Z :. nsom :. dim') = A.arrayShape som
+          unless (dim == dim') $ error "som dimensions do not match"
+          sizeCheck nsom
+          pure . J.encode . uncurry3 statsSummaryArray
+            $ somSumSqsumCountsLL points som
+        QueryLessThan som' med' -> do
+          let som = arrayMatrix som'
+              med = arrayMatrix med'
+              sh@(Z :. nsom :. dim') = A.arrayShape som
+          unless (sh == A.arrayShape med && dim == dim')
+            $ error "sizes do not match"
+          sizeCheck nsom
+          let cs = somClosestLL points som
+              ltcs = somLtCountsLL points cs med
+              counts = somCountsLL (scalar nsom) cs
+          pure . J.encode $ ltCsArray ltcs counts
 -- run the training client
 run (ClientTrainCmd servers copts opts) = do
   unless (not $ null servers) $ error "no servers to connect to"

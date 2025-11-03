@@ -360,6 +360,7 @@ data ServerOpts = ServerOpts
   , serverCertChain :: [FilePath]
   , serverKey :: FilePath
   , serverTrust :: TrustOpts
+  , serverMaxQueries :: Maybe Int
   , serverMaxQueryClusters :: Maybe Int
   } deriving (Show)
 
@@ -399,6 +400,11 @@ serveropts = do
           <> metavar "PEM"
           <> help "TLS server private key"
   serverTrust <- trustopts
+  serverMaxQueries <-
+    optional . option auto
+      $ long "max-queries"
+          <> metavar "Q"
+          <> help "stop responding after answering Q queries"
   serverMaxQueryClusters <-
     optional . option auto
       $ long "max-query-clusters"
