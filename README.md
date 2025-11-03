@@ -422,6 +422,27 @@ analyzing a new SOM upon that.
 
 # FAQ
 
+#### Can others reconstruct my data?
+
+As usual with federated learning, statistical attack that exfiltrate details
+about the original dataset are possible. The purpose of the SOMs is to convey
+information about the "high-level" distribution of the data without exposing
+details; and one typically wants to avoid leaking exact information about
+individual data points. With the batch SOM training, the individual points
+_may_ leak (or be reconstructed) if the attacker is allowed to ask sufficient
+amount of detailed queries.
+
+To prevent such attacks, simply use the options of the remotesom `server`
+command to place a practical limit on the amount of information that the
+clients can extract:
+- set `--max-queries` (limit of the total query count that the server is
+  willing to answer) to the exact count of iterations that you expect to
+  answer, normally less than a hundred
+- set `--max-query-clusters` (maximum number of the number of SOM clusters in
+  the query) to something that makes overfitting to individual data points
+  hard -- typically, the count of clusters should be less than the square root
+  of the total number of data points
+
 #### Is the training reproducible?
 
 Given the same architecture, the same data on data hosts, the same order of
