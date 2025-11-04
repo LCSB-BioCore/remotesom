@@ -30,8 +30,10 @@ batch:
 `remotesom` was developed at [Bioinformatics
 Core](https://www.uni.lu/lcsb-en/research-groups/bioinformatics-core/) of
 Luxembourg Centre for Systems Biomedicine, of University of Luxembourg.
+The development was partially supported by [IDERHA](https://www.iderha.org/)
+and [ImmUniverse](https://www.immuniverse.eu) projects.
 
-<img src="media/unilu.svg" alt="Uni.lu logo" height="64px">   <img src="media/lcsb.svg" alt="LCSB logo" height="64px">
+<img src="media/unilu.svg" alt="Uni.lu logo" height="64px">   <img src="media/lcsb.svg" alt="LCSB logo" height="64px">   <img src="media/iderha.svg" alt="IDERHA logo" height="64px">   <img src="media/immuniverse.svg" alt="ImmUniverse logo" height="64px">
 
 # How-to
 
