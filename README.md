@@ -107,6 +107,32 @@ import numpy as np
 my_matrix.T.astype(np.float32).tofile("mydata.bin")
 ```
 
+##### Toy dataset for testing
+
+You can easily generate **a simple dataset for testing** in R: We recommend
+playing with a 5-dimensional hypercube with 32 clusters, which is easy to
+create but provides sufficient reminiscence to the usual cytometry datasets:
+
+```r
+N <- 10000
+D <- 5
+myMatrix <- matrix(rnorm(N*D) + sample(c(0,4), N*D, replace=T, prob=c(0.7,0.3)), N, D)
+```
+
+The `myMatrix` may be exported as above. You'll need to use the same N and D to
+`remotesom` invocations. To see what such a dataset "looks like", use e.g. a
+projection via UMAP from the `uwot` library:
+```r
+library(uwot)
+e <- umap(myMatrix)
+x <- data.frame(feature=myMatrix, UMAP=e)
+
+library(ggplot2)
+ggplot(x, aes(UMAP.1, UMAP.2, color=feature.1)) +
+  geom_point(stroke=0) +
+  scale_color_distiller(palette='RdYlBu') +
+  theme_minimal()
+```
 
 ### Test the training locally (on data hosts)
 
